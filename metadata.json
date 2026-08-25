@@ -1,0 +1,6 @@
+{
+  "name": "NutriSmart",
+  "description": "Plataforma clínica avançada para nutricionistas e pacientes com planos alimentares inteligentes por IA, rastreamento metabólico, agenda integrada, chat em tempo real e laboratório culinário.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

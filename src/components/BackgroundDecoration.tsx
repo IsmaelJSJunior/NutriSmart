@@ -1,0 +1,30 @@
+import React from 'react';
+
+interface BackgroundDecorationProps {
+  bgImage?: string;
+}
+
+export const BackgroundDecoration: React.FC<BackgroundDecorationProps> = ({
+  bgImage = 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&q=80&w=2000',
+}) => {
+  return (
+    <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden print:hidden bg-slate-50 w-full h-full">
+      {/* Organic Wellness Texture Overlay */}
+      <div
+        className="absolute inset-0 z-0 opacity-10 bg-cover bg-center transition-opacity duration-1000 ease-in-out w-full h-full"
+        style={{
+          backgroundImage: `url('${bgImage}')`,
+        }}
+      />
+
+      {/* Sleek Gradient Overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/95 via-slate-50/90 to-emerald-50/95 z-0" />
+
+      {/* Subtle Glow Lighting Orbs */}
+      <div className="absolute top-[-10%] left-[-5%] w-[45%] h-[45%] rounded-full bg-emerald-500/10 blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] rounded-full bg-cyan-500/10 blur-[100px] pointer-events-none" />
+      <div className="absolute top-[40%] right-[15%] w-[25%] h-[25%] rounded-full bg-teal-500/5 blur-[90px] pointer-events-none" />
+    </div>
+  );
+};
+
