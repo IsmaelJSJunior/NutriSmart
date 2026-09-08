@@ -22,7 +22,7 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 2): P
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (i === retries - 1) {
-        console.warn(`[NutriSmart AI] Falha na requisição para ${url}:`, error?.message || error);
+        console.warn(`[NutriClinical AI] Falha na requisição para ${url}:`, error?.message || error);
         throw error;
       }
       await new Promise((resolve) => setTimeout(resolve, delays[i]));

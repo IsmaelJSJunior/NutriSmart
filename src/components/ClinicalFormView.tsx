@@ -686,7 +686,7 @@ export const ClinicalFormView: React.FC<ClinicalFormViewProps> = ({
       setLoadingStep('Analisando perfil metabólico e queixas clínicas...');
       await new Promise((r) => setTimeout(r, 400));
 
-      setLoadingStep('Calculando macros, estratégia e carências com IA NutriSmart...');
+      setLoadingStep('Calculando macros, estratégia e carências com IA NutriClinical...');
       const aiResponse: AiNutritionPlan = await requestMealPlanAI(payload);
 
       setLoadingStep('Formatando prescrição clínica...');

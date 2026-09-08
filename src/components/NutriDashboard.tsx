@@ -525,7 +525,7 @@ export const NutriDashboard: React.FC<NutriDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Ação Direita + Pin + Seletor de Histórico Customizado (NutriSmart UI) */}
+                    {/* Ação Direita + Pin + Seletor de Histórico Customizado (NutriClinical UI) */}
                     <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-center">
                       {/* Botão Discreto de Fixar (Pin) */}
                       <button

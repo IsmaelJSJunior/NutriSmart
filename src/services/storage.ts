@@ -14,11 +14,11 @@ import {
 
 // Storage keys for local fallback / caching
 const STORAGE_KEYS = {
-  REPORTS: 'nutrismart_reports_v1',
-  MESSAGES: 'nutrismart_messages_v1',
-  AGENDA: 'nutrismart_agenda_v1',
-  RECIPES: 'nutrismart_saved_recipes_v1',
-  CALCULATOR: 'nutrismart_calculator_v1',
+  REPORTS: 'nutriclinical_reports_v1',
+  MESSAGES: 'nutriclinical_messages_v1',
+  AGENDA: 'nutriclinical_agenda_v1',
+  RECIPES: 'nutriclinical_saved_recipes_v1',
+  CALCULATOR: 'nutriclinical_calculator_v1',
 };
 
 declare global {
@@ -30,7 +30,7 @@ declare global {
 }
 
 let firebaseDb: Firestore | null = null;
-let appId = 'default-nutrismart-id';
+let appId = 'default-nutriclinical-id';
 
 // Initialize Firebase if configuration exists
 try {
@@ -41,7 +41,7 @@ try {
       const app = getApps().length === 0 ? initializeApp(config) : getApp();
       firebaseDb = getFirestore(app);
       const auth = getAuth(app);
-      appId = window.__app_id || 'nutrismart-prod';
+      appId = window.__app_id || 'nutriclinical-prod';
 
       if (window.__initial_auth_token) {
         signInWithCustomToken(auth, window.__initial_auth_token).catch(() => signInAnonymously(auth));
@@ -57,7 +57,12 @@ try {
 // Local Storage helpers
 export function getLocalData<T>(key: string, fallback: T): T {
   try {
-    const item = localStorage.getItem(key);
+    let item = localStorage.getItem(key);
+    // Backward compatibility with previous storage keys
+    if (!item && key.startsWith('nutriclinical_')) {
+      const legacyKey = key.replace('nutriclinical_', 'nutrismart_');
+      item = localStorage.getItem(legacyKey);
+    }
     return item ? JSON.parse(item) : fallback;
   } catch {
     return fallback;
@@ -67,6 +72,7 @@ export function getLocalData<T>(key: string, fallback: T): T {
 export function setLocalData<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    window.dispatchEvent(new Event('nutriclinical_storage_updated'));
     window.dispatchEvent(new Event('nutrismart_storage_updated'));
   } catch (e) {
     console.error('Local storage write error:', e);
@@ -74,14 +80,14 @@ export function setLocalData<T>(key: string, value: T): void {
 }
 
 export function getPinnedPatientCodes(): string[] {
-  return getLocalData<string[]>('nutrismart_pinned_patients_v1', []);
+  return getLocalData<string[]>('nutriclinical_pinned_patients_v1', []);
 }
 
 export function togglePinnedPatientCode(code: string): string[] {
   const current = getPinnedPatientCodes();
   const upper = code.toUpperCase();
   const updated = current.includes(upper) ? current.filter((c) => c !== upper) : [upper, ...current];
-  setLocalData('nutrismart_pinned_patients_v1', updated);
+  setLocalData('nutriclinical_pinned_patients_v1', updated);
   return updated;
 }
 
@@ -95,7 +101,7 @@ export function getPatientRecipeQuota(patientCode?: string): PatientRecipeQuota 
   if (!patientCode) {
     return { recipesGeneratedToday: 0, lastGenerationDate: todayStr };
   }
-  const key = `nutrismart_quota_${patientCode.toUpperCase()}`;
+  const key = `nutriclinical_quota_${patientCode.toUpperCase()}`;
   const stored = getLocalData<PatientRecipeQuota | null>(key, null);
   if (!stored || stored.lastGenerationDate !== todayStr) {
     const fresh: PatientRecipeQuota = {
@@ -113,7 +119,7 @@ export function incrementPatientRecipeQuota(patientCode?: string, count: number 
   if (!patientCode) {
     return { recipesGeneratedToday: 0, lastGenerationDate: todayStr };
   }
-  const key = `nutrismart_quota_${patientCode.toUpperCase()}`;
+  const key = `nutriclinical_quota_${patientCode.toUpperCase()}`;
   const current = getPatientRecipeQuota(patientCode);
   const updated: PatientRecipeQuota = {
     recipesGeneratedToday: Math.min(4, (current.recipesGeneratedToday || 0) + count),
@@ -150,7 +156,7 @@ export class DataStore {
     // Instant Cross-Tab & Cross-Window Local Synchronization
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        this.syncChannel = new BroadcastChannel('nutrismart_sync_channel');
+        this.syncChannel = new BroadcastChannel('nutriclinical_sync_channel');
         this.syncChannel.onmessage = () => {
           this.syncFromLocal();
         };
@@ -201,6 +207,7 @@ export class DataStore {
 
     // Cross-tab sync
     window.addEventListener('storage', () => this.syncFromLocal());
+    window.addEventListener('nutriclinical_storage_updated', () => this.syncFromLocal());
     window.addEventListener('nutrismart_storage_updated', () => this.syncFromLocal());
   }
 
@@ -443,7 +450,7 @@ export class DataStore {
       await this.saveCalculatorState(data.calculatorState);
     }
     if (data.pinnedPatients && Array.isArray(data.pinnedPatients)) {
-      setLocalData('nutrismart_pinned_patients_v1', data.pinnedPatients);
+      setLocalData('nutriclinical_pinned_patients_v1', data.pinnedPatients);
     }
   }
 
@@ -738,7 +745,7 @@ export class DataStore {
       }
 
       if (Array.isArray(data.pinnedPatients)) {
-        setLocalData('nutrismart_pinned_patients_v1', data.pinnedPatients);
+        setLocalData('nutriclinical_pinned_patients_v1', data.pinnedPatients);
       }
 
       this.notifyAll();
@@ -911,7 +918,7 @@ export class DataStore {
         id: 'msg_init_1',
         patientCode: 'ANA1',
         sender: 'nutri',
-        text: 'Olá Ana! Bem-vinda ao seu acompanhamento no NutriSmart. Qualquer dúvida com as receitas ou substituições, pode me enviar aqui!',
+        text: 'Olá Ana! Bem-vinda ao seu acompanhamento no NutriClinical. Qualquer dúvida com as receitas ou substituições, pode me enviar aqui!',
         timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         read: true,
       },

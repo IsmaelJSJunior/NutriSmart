@@ -199,7 +199,7 @@ export const NutritionCalculatorView: React.FC<NutritionCalculatorViewProps> = (
     const flItem = FATOR_LESAO_OPTIONS.find((o) => o.value === data.fatorLesao);
     const ftItem = FATOR_TERMICO_OPTIONS.find((o) => o.value === data.fatorTermico);
 
-    let texto = `*📊 AVALIAÇÃO NUTRICIONAL & METABÓLICA • NUTRISMART*\n`;
+    let texto = `*📊 AVALIAÇÃO NUTRICIONAL & METABÓLICA • NUTRICLINICAL*\n`;
     texto += `📅 *Data:* ${hoje}\n`;
     texto += `👤 *Paciente:* ${data.sexo === 'M' ? 'Masculino' : 'Feminino'} | *Idade:* ${idadeNum > 0 ? `${idadeNum} anos` : 'Não informada'}\n\n`;
 
@@ -232,7 +232,7 @@ export const NutritionCalculatorView: React.FC<NutritionCalculatorViewProps> = (
       texto += `• Volume Total em 24h: ${Math.round(vazao * 24).toLocaleString('pt-BR')} ml/dia\n`;
     }
 
-    texto += `\n_Emitido via NutriSmart • Sistema de Nutrição Clínica_`;
+    texto += `\n_Emitido via NutriClinical • Sistema de Nutrição Clínica_`;
 
     navigator.clipboard.writeText(texto).then(() => {
       setCopied(true);
@@ -992,7 +992,7 @@ export const NutritionCalculatorView: React.FC<NutritionCalculatorViewProps> = (
 
       {/* ======================================================== */}
       {/* 5. MODAL CENTRALIZADO GLOBAL: FATOR LESÃO (FL)           */}
-      {/* Padrão NutriSmart com createPortal + dark backdrop blur  */}
+      {/* Padrão NutriClinical com createPortal + dark backdrop blur  */}
       {/* ======================================================== */}
       {showFlModal &&
         typeof document !== 'undefined' &&
@@ -1095,7 +1095,7 @@ export const NutritionCalculatorView: React.FC<NutritionCalculatorViewProps> = (
 
       {/* ======================================================== */}
       {/* 6. MODAL CENTRALIZADO GLOBAL: FATOR TÉRMICO (FT)         */}
-      {/* Padrão NutriSmart com createPortal + dark backdrop blur  */}
+      {/* Padrão NutriClinical com createPortal + dark backdrop blur  */}
       {/* ======================================================== */}
       {showFtModal &&
         typeof document !== 'undefined' &&

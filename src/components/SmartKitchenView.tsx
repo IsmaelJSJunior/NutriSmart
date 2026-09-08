@@ -28,7 +28,7 @@ interface SmartKitchenViewProps {
   patientCode?: string;
 }
 
-const SAVED_RECIPES_KEY = 'nutrismart_saved_recipes_v1';
+const SAVED_RECIPES_KEY = 'nutriclinical_saved_recipes_v1';
 
 const QUICK_PROMPTS = [
   'Café da manhã rico em proteínas e sem lactose',

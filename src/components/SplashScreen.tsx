@@ -19,7 +19,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     'Carregando prontuários e protocolos nutricionais...',
     'Calibrando calculadoras antropométricas e IMC...',
     'Sincronizando módulos de prescrição e agenda...',
-    'Ambiente pronto! Abrindo NutriSmart...',
+    'Ambiente pronto! Abrindo NutriClinical...',
   ];
 
   useEffect(() => {
@@ -73,7 +73,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 shadow-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.06)] transition-transform duration-700 hover:scale-105">
             <img
               src="/logo.png"
-              alt="NutriSmart Logo"
+              alt="NutriClinical Logo"
               className="w-full h-full object-cover rounded-full border-0"
             />
           </div>
@@ -84,7 +84,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-800 flex items-center justify-center gap-1">
             <span>Nutri</span>
             <span className="text-emerald-600 drop-shadow-sm">
-              Smart
+              Clinical
             </span>
           </h1>
           <p className="text-xs text-slate-500 font-medium tracking-wide mt-2 flex items-center justify-center gap-1.5 leading-relaxed max-w-xs">

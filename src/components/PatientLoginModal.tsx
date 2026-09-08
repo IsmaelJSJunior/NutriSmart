@@ -126,7 +126,7 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
 
         <div className="flex items-center gap-3.5 mb-2">
           <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border-0 ring-0 shadow-none">
-            <img src="/logo.png" alt="NutriSmart Logo" className="w-full h-full object-cover rounded-full border-0" />
+            <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full border-0" />
           </div>
           <div>
             <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">

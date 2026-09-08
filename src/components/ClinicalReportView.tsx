@@ -135,7 +135,7 @@ export const ClinicalReportView: React.FC<ClinicalReportViewProps> = ({
 
   // Copy Complete Plan for WhatsApp
   const handleCopyFullWhatsApp = async () => {
-    const fullText = `*NUTRISMART • PRESCRIÇÃO CLÍNICA PERSONALIZADA*
+    const fullText = `*NUTRICLINICAL • PRESCRIÇÃO CLÍNICA PERSONALIZADA*
 👤 *Paciente:* ${formData.nome}
 🎯 *Objetivo:* ${formData.objetivo}
 📅 *Data:* ${new Date(report.date).toLocaleDateString('pt-BR')}
@@ -159,7 +159,7 @@ ${supplementsText}
 ${deficienciasText}
 
 ═════════════════════════════
-_NutriSmart • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
+_NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
 
     const success = await copyToClipboard(fullText);
     if (success) {
@@ -188,7 +188,7 @@ _NutriSmart • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
                 <button
                   type="button"
                   onClick={() => {
-                    const text = `NutriSmart - Credenciais do Paciente:\nNome: ${formData.nome}\nCódigo: ${report.patientCode}\nSenha: ${formData.senha || 'Não cadastrada'}`;
+                    const text = `NutriClinical - Credenciais do Paciente:\nNome: ${formData.nome}\nCódigo: ${report.patientCode}\nSenha: ${formData.senha || 'Não cadastrada'}`;
                     navigator.clipboard.writeText(text);
                     setCopiedCredentials(true);
                     setTimeout(() => setCopiedCredentials(false), 2000);
@@ -245,11 +245,11 @@ _NutriSmart • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
         <div className="pb-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-black text-xl shadow-md print:bg-emerald-600">
-              NS
+              NC
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900">NutriSmart</h1>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900">NutriClinical</h1>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase">
                   Prescrição Oficial
                 </span>

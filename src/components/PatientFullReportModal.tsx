@@ -82,7 +82,7 @@ export const PatientFullReportModal: React.FC<PatientFullReportModalProps> = ({
   const imc = calculateIMC(formData.peso, formData.altura);
 
   const handleCopyFullWhatsApp = async () => {
-    const fullText = `*NUTRISMART • FICHA CLÍNICA & PRESCRIÇÃO*
+    const fullText = `*NUTRICLINICAL • FICHA CLÍNICA & PRESCRIÇÃO*
 👤 *Paciente:* ${formData.nome}
 🎯 *Objetivo:* ${formData.objetivo}
 📅 *Data:* ${new Date(report.date).toLocaleDateString('pt-BR')}
@@ -106,7 +106,7 @@ ${supplementsText}
 ${deficienciasText}
 
 ═════════════════════════════
-_NutriSmart • Dra. Maria Eduarda_`;
+_NutriClinical • Dra. Maria Eduarda_`;
 
     const success = await copyToClipboard(fullText);
     if (success) {
@@ -318,7 +318,7 @@ _NutriSmart • Dra. Maria Eduarda_`;
         {/* Footer */}
         <div className="p-3.5 sm:p-4 bg-white border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
           <span className="font-semibold">
-            NutriSmart • Dra. Maria Eduarda
+            NutriClinical • Dra. Maria Eduarda
           </span>
           <span className="text-[11px] font-mono text-slate-400">
             Prontuário {report.patientCode}

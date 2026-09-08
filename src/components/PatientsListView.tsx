@@ -158,7 +158,7 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
   }, [groupedPatients, messages, sortBy]);
 
   const handleCopyCredentials = (code: string, senha?: string, name?: string) => {
-    const text = `NutriSmart - Credenciais de Acesso do Paciente:\nPaciente: ${name || ''}\nCódigo: ${code}\nSenha: ${senha || 'Não cadastrada'}\nAcesse o portal e acompanhe sua evolução!`;
+    const text = `NutriClinical - Credenciais de Acesso do Paciente:\nPaciente: ${name || ''}\nCódigo: ${code}\nSenha: ${senha || 'Não cadastrada'}\nAcesse o portal e acompanhe sua evolução!`;
     navigator.clipboard.writeText(text);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);

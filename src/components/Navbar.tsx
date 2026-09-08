@@ -59,10 +59,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="max-w-7xl mx-auto px-3 sm:px-6 w-full flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 group cursor-default">
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
-              <img src="/logo.png" alt="NutriSmart Logo" className="w-full h-full object-cover rounded-full border-0" />
+              <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full border-0" />
             </div>
             <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap transition-all duration-300 hover:brightness-110 group-hover:brightness-110">
-              Nutri<span className="text-emerald-500">Smart</span>
+              Nutri<span className="text-emerald-500">Clinical</span>
             </div>
           </div>
 
@@ -97,17 +97,17 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="max-w-7xl mx-auto px-3 sm:px-6 w-full flex items-center justify-between gap-2">
           {/* Brand, Back Button & Home (Strict Left-to-Right Sequence) */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0 mr-auto min-w-0">
-            {/* 1. Logo NutriSmart */}
+            {/* 1. Logo NutriClinical */}
             <button
               onClick={() => onNavigate(activeRole === 'nutri' ? 'dashboard' : 'patient-portal')}
               className="flex items-center gap-2 sm:gap-2.5 text-left group cursor-pointer shrink-0"
               title="Ir para tela inicial"
             >
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
-                <img src="/logo.png" alt="NutriSmart Logo" className="w-full h-full object-cover rounded-full border-0" />
+                <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full border-0" />
               </div>
               <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap transition-all duration-300 hover:brightness-110 group-hover:brightness-110">
-                Nutri<span className="text-emerald-500">Smart</span>
+                Nutri<span className="text-emerald-500">Clinical</span>
               </div>
             </button>
 

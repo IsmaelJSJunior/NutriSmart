@@ -98,7 +98,7 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
         const hasCalc = !!parsed.calculatorState;
 
         if (reportsList.length === 0 && apptsList.length === 0 && msgsList.length === 0 && recipesList.length === 0 && !hasCalc) {
-          setError('O arquivo selecionado não contém uma estrutura de dados reconhecida do NutriSmart.');
+          setError('O arquivo selecionado não contém uma estrutura de dados reconhecida do NutriClinical.');
           setParsedStats(null);
         } else {
           setParsedStats({
@@ -184,7 +184,7 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
         </div>
 
         <p className="text-xs text-slate-500 mb-5 leading-relaxed">
-          Selecione o arquivo <code className="bg-slate-100 px-1.5 py-0.5 rounded text-sky-700 font-mono font-semibold">.json</code> exportado pelo NutriSmart para sincronizar a base local com segurança.
+          Selecione o arquivo <code className="bg-slate-100 px-1.5 py-0.5 rounded text-sky-700 font-mono font-semibold">.json</code> exportado pelo NutriClinical para sincronizar a base local com segurança.
         </p>
 
         <div className="border-2 border-dashed border-sky-200 hover:border-sky-400 bg-sky-50/50 rounded-2xl p-6 text-center transition mb-4 relative cursor-pointer">
@@ -199,7 +199,7 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
             <span className="text-xs font-bold text-slate-800">
               {fileName ? fileName : 'Clique ou arraste o arquivo de backup'}
             </span>
-            <span className="text-[10px] text-slate-400 mt-1">Formato JSON NutriSmart</span>
+            <span className="text-[10px] text-slate-400 mt-1">Formato JSON NutriClinical</span>
           </div>
         </div>
 

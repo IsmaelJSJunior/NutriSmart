@@ -144,7 +144,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] text-slate-400 font-medium">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span>NutriSmart Security Engine • Criptografia local</span>
+          <span>NutriClinical Security Engine • Criptografia local</span>
         </div>
       </div>
     </div>

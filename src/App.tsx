@@ -82,8 +82,8 @@ export default function App() {
     }
 
     // Check existing session in localStorage
-    const savedRole = localStorage.getItem('nutrismart_session_role');
-    const savedCode = localStorage.getItem('nutrismart_session_patient_code');
+    const savedRole = localStorage.getItem('nutriclinical_session_role') || localStorage.getItem('nutrismart_session_role');
+    const savedCode = localStorage.getItem('nutriclinical_session_patient_code') || localStorage.getItem('nutrismart_session_patient_code');
     if (savedRole === 'nutri') {
       setRole('nutri');
       setCurrentView('dashboard');
@@ -109,7 +109,8 @@ export default function App() {
   const handleNutriLoginSuccess = () => {
     setRole('nutri');
     setCurrentView('dashboard');
-    localStorage.setItem('nutrismart_session_role', 'nutri');
+    localStorage.setItem('nutriclinical_session_role', 'nutri');
+    localStorage.removeItem('nutrismart_session_role');
     showToast('Bem-vinda, Dra. Maria Eduarda! Sessão iniciada.');
   };
 
@@ -117,8 +118,10 @@ export default function App() {
     setRole('patient');
     setPatientCode(code);
     setCurrentView('patient-portal');
-    localStorage.setItem('nutrismart_session_role', 'patient');
-    localStorage.setItem('nutrismart_session_patient_code', code);
+    localStorage.setItem('nutriclinical_session_role', 'patient');
+    localStorage.setItem('nutriclinical_session_patient_code', code);
+    localStorage.removeItem('nutrismart_session_role');
+    localStorage.removeItem('nutrismart_session_patient_code');
     showToast(`Acesso ao Prontuário ${code} realizado com sucesso!`);
   };
 
@@ -129,6 +132,8 @@ export default function App() {
     setActiveReport(null);
     setActiveChatPatient(null);
     setCalculatorSession(DEFAULT_CALCULATOR_SESSION);
+    localStorage.removeItem('nutriclinical_session_role');
+    localStorage.removeItem('nutriclinical_session_patient_code');
     localStorage.removeItem('nutrismart_session_role');
     localStorage.removeItem('nutrismart_session_patient_code');
     showToast('Você encerrou a sessão.');
