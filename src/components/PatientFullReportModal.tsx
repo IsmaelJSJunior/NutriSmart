@@ -34,13 +34,18 @@ export const PatientFullReportModal: React.FC<PatientFullReportModalProps> = ({
 }) => {
   const [copiedAll, setCopiedAll] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
-  // Scroll lock & Escape key
+  useEffect(() => {
+    if (isOpen && report) {
+      const timer = setTimeout(() => setIsMounted(true), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, report]);
+
+  // Escape key listener
   useEffect(() => {
     if (!isOpen || !report) return;
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -51,7 +56,6 @@ export const PatientFullReportModal: React.FC<PatientFullReportModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.body.style.overflow = originalOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, report]);
@@ -60,11 +64,14 @@ export const PatientFullReportModal: React.FC<PatientFullReportModalProps> = ({
     setIsClosing(true);
     setTimeout(() => {
       setIsClosing(false);
+      setIsMounted(false);
       onClose();
     }, 220);
   };
 
   if (!isOpen || !report) return null;
+
+  const isVisible = isMounted && !isClosing;
 
   const { formData } = report;
   const mealPlanText = report.aiData?.mealPlan || report.aiMealPlan || '';
@@ -79,7 +86,8 @@ export const PatientFullReportModal: React.FC<PatientFullReportModalProps> = ({
 👤 *Paciente:* ${formData.nome}
 🎯 *Objetivo:* ${formData.objetivo}
 📅 *Data:* ${new Date(report.date).toLocaleDateString('pt-BR')}
-🔑 *Código:* ${report.patientCode}
+🔑 *Código de Acesso:* ${report.patientCode}
+🔒 *Senha de Acesso:* ${formData.senha || 'Não cadastrada'}
 
 ═════════════════════════════
 🥗 *PLANO ALIMENTAR:*
@@ -110,45 +118,47 @@ _NutriSmart • Dra. Maria Eduarda_`;
   return (
     <div
       onClick={handleClose}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-900/70 backdrop-blur-md transition-all duration-200 ease-out select-none ${
-        isClosing ? 'opacity-0' : 'opacity-100'
+      className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/75 backdrop-blur-md transition-all duration-300 ease-out select-none overflow-hidden ${
+        isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 relative transition-all duration-200 ease-out transform overflow-hidden ${
-          isClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+        className={`bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 relative transition-all duration-300 ease-out transform overflow-hidden ${
+          isVisible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-3'
         }`}
       >
-        {/* Header Bar */}
-        <div className="p-4 sm:p-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-between shrink-0">
+        {/* Header Bar - Fixed and Sticky at Top */}
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-black">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-black shrink-0">
               <FileText className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-black text-white">
+                <h3 className="text-sm sm:text-base font-black text-white truncate max-w-[180px] sm:max-w-xs">
                   Ficha Clínica • {formData.nome}
                 </h3>
-                <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-md">
-                  {report.patientCode}
+                <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded flex items-center gap-1.5">
+                  <span>{report.patientCode}</span>
+                  <span className="text-emerald-500/40">|</span>
+                  <span>Senha: {formData.senha || '••••••'}</span>
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-medium">
+              <p className="text-[11px] text-slate-400 font-medium">
                 Consulta emitida em {new Date(report.date).toLocaleDateString('pt-BR')}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {onNavigateToChat && (
               <button
                 onClick={() => {
                   handleClose();
                   setTimeout(() => onNavigateToChat(report.patientCode), 230);
                 }}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer active:scale-95"
                 title="Abrir chat direto"
               >
                 <MessageCircle className="w-3.5 h-3.5" />
@@ -158,7 +168,7 @@ _NutriSmart • Dra. Maria Eduarda_`;
 
             <button
               onClick={handleCopyFullWhatsApp}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer active:scale-95 ${
                 copiedAll
                   ? 'bg-emerald-600 text-white'
                   : 'bg-emerald-500 hover:bg-emerald-600 text-white'
@@ -171,7 +181,7 @@ _NutriSmart • Dra. Maria Eduarda_`;
 
             <button
               onClick={() => window.print()}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+              className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer active:scale-95"
               title="Imprimir"
             >
               <Printer className="w-4 h-4" />
@@ -179,7 +189,7 @@ _NutriSmart • Dra. Maria Eduarda_`;
 
             <button
               onClick={handleClose}
-              className="p-2 rounded-xl bg-white/10 hover:bg-rose-500 text-white transition ml-1"
+              className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-rose-500 text-white transition ml-1 cursor-pointer active:scale-95"
               title="Fechar Ficha"
             >
               <X className="w-4 h-4" />
@@ -187,8 +197,8 @@ _NutriSmart • Dra. Maria Eduarda_`;
           </div>
         </div>
 
-        {/* Modal Scrollable Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/50">
+        {/* Modal Scrollable Body - Strictly within max-h-[85vh] */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50/50 scrollbar-thin">
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
             <div>
@@ -306,16 +316,13 @@ _NutriSmart • Dra. Maria Eduarda_`;
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-white border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
+        <div className="p-3.5 sm:p-4 bg-white border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
           <span className="font-semibold">
             NutriSmart • Dra. Maria Eduarda
           </span>
-          <button
-            onClick={handleClose}
-            className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition"
-          >
-            Fechar Visualizador
-          </button>
+          <span className="text-[11px] font-mono text-slate-400">
+            Prontuário {report.patientCode}
+          </span>
         </div>
       </div>
     </div>

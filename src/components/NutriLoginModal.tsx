@@ -16,13 +16,18 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
-  // Scroll Lock & Escape key listener
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => setIsMounted(true), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  // Escape key listener
   useEffect(() => {
     if (!isOpen) return;
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -33,7 +38,6 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.body.style.overflow = originalOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
@@ -42,6 +46,7 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
     setIsClosing(true);
     setTimeout(() => {
       setIsClosing(false);
+      setIsMounted(false);
       onClose();
     }, 220);
   };
@@ -56,6 +61,7 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
       setIsClosing(true);
       setTimeout(() => {
         setIsClosing(false);
+        setIsMounted(false);
         onSuccess();
         onClose();
       }, 200);
@@ -64,31 +70,33 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
     }
   };
 
+  const isVisible = isMounted && !isClosing;
+
   return (
     <div
       onClick={handleClose}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all duration-200 ease-out select-none ${
-        isClosing ? 'opacity-0' : 'opacity-100'
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md transition-all duration-300 ease-out select-none ${
+        isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white rounded-3xl max-w-sm w-full p-6 sm:p-7 shadow-2xl border border-emerald-100 relative transition-all duration-200 ease-out transform ${
-          isClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+        className={`bg-white rounded-3xl max-w-sm w-full p-6 sm:p-7 shadow-2xl border border-emerald-100 relative transition-all duration-300 ease-out transform ${
+          isVisible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-3'
         }`}
       >
         <button
           onClick={handleClose}
           type="button"
-          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 active:scale-95"
+          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 active:scale-95 cursor-pointer"
           title="Fechar"
         >
           <X className="w-5 h-5" />
         </button>
 
         <div className="flex items-center gap-3.5 mb-2">
-          <div className="w-11 h-11 rounded-2xl bg-emerald-100/80 flex items-center justify-center text-emerald-600 shadow-xs border border-emerald-200/50 shrink-0">
-            <Stethoscope className="w-6 h-6" />
+          <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border-0 ring-0 shadow-none">
+            <img src="/logo.png" alt="NutriSmart Logo" className="w-full h-full object-cover rounded-full border-0" />
           </div>
           <div>
             <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">
@@ -117,7 +125,7 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 transition p-0.5"
+                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 transition p-0.5 cursor-pointer"
                 title={showPassword ? 'Ocultar senha' : 'Ver senha'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -135,7 +143,7 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition active:scale-98"
+              className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
             >
               <span>Entrar</span>
               <ArrowRight className="w-4 h-4" />
@@ -146,3 +154,4 @@ export const NutriLoginModal: React.FC<NutriLoginModalProps> = ({
     </div>
   );
 };
+

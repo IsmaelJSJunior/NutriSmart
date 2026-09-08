@@ -22,7 +22,7 @@ try {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8083;
 
 app.use(express.json({ limit: "15mb" }));
 
@@ -102,6 +102,23 @@ function generateFallbackRecipes(promptQuery: string, count: number = 2) {
   ].slice(0, count);
 }
 
+const GEMINI_MODEL = "gemini-3.6-flash";
+
+// Helper to call Gemini with retry and exponential backoff
+async function generateWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2) {
+  const delays = [1000, 2000];
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err: any) {
+      console.warn(`[Gemini API] Tentativa ${i + 1}/${maxRetries} falhou:`, err?.message || err);
+      if (i === maxRetries - 1) throw err;
+      await new Promise((r) => setTimeout(r, delays[i]));
+    }
+  }
+  throw new Error("Falha em todas as tentativas com Gemini API");
+}
+
 // 1. Generate Full Nutrition Plan & Clinical Tracking
 app.post("/api/ai/meal-plan", async (req, res) => {
   try {
@@ -132,26 +149,27 @@ Nível de Atividade Física: ${exercicio || "Sedentário"}
 Restrições/Alergias Alimentares: ${restricoes || "Nenhuma relatada"}
 Sintomas / Queixas Clínicas: ${sintomas || "Nenhuma queixa relatada"}
 Estratégia Nutricional Selecionada: ${tipoDieta || "Padrão (IA Livre)"}
-Meta Calórica Estipulada: ${calorias ? `${calorias} kcal` : "Calculada pela IA"}
+Meta Calórica Estipulada: ${calorias ? (calorias.includes('kcal') ? calorias : `${calorias} kcal`) : '1800 kcal'}
 Observações do Paciente: ${observacoes || "Nenhuma"}
 Instruções Adicionais da Nutricionista: ${instrucoesIA || "Prescrição padrão balanceada"}
 
 DIRETRIZES OBRIGATÓRIAS:
 1. No campo "mealPlan", OBRIGATORIAMENTE inicie o texto com a seguinte linha de cabeçalho exata:
-"🎯 Dieta baseada em: ${tipoDieta ? tipoDieta : "Padrão (IA Livre)"} | Meta Calórica: ${calorias ? `${calorias} kcal` : "Calculada pela IA"}\n\n"
+"🎯 Dieta baseada em: ${tipoDieta ? tipoDieta : "Padrão (IA Livre)"} | Meta Calórica: ${calorias ? (calorias.includes('kcal') ? calorias : `${calorias} kcal`) : '1800 kcal'}\n\n"
 2. Estruture as refeições detalhadas em tópicos compactos. Use os emojis temáticos: 🌅 Café da Manhã, 🍽️ Almoço, 🍎 Lanche da Tarde, 🌙 Jantar, 🍵 Ceia (se aplicável).
 3. Liste os alimentos logo a seguir com o marcador "• " (um alimento por linha), com quantidades e opções de substituição fáceis. NÃO use asteriscos duplos (**) ou formatação markdown complexa no texto; mantenha limpo, direto e legível. Pule apenas uma linha entre cada refeição.
 4. No campo "training", sugira uma rotina de exercícios físicos personalizada, frequência e intensidade alinhada ao objetivo (${objetivo}).
 5. No campo "supplements", elabore uma lista de suplementação estratégica em tópicos com "• ", dosagens recomendadas e melhor horário de consumo.
 6. No campo "deficiencias", faça uma análise preditiva e inteligente de possíveis carências nutricionais (vitaminas, minerais, eletrólitos, desequilíbrios hormonais/metabólicos) com base estrita nas queixas clínicas e sintomas relatados ("${sintomas || "Nenhum"}"). Adote um tom clínico de alerta preventivo (ex.: "A queixa de queda capilar e cansaço pode sugerir carência de Ferritina/Ferro, Vitamina D ou Zinco. Recomenda-se solicitação de hemograma completo, ferritina sérica e 25-OH Vitamina D."). Se não houver sintomas, retorne: "Sem indicativos clínicos de carências nutricionais urgentes baseados no relato inicial."`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateWithRetry(ai, {
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         systemInstruction:
-          "Você é a Dra. Maria Eduarda, Nutricionista Clínica Funcional e Esportiva de elite. Seja precisa, empática, técnica e extremamente organizada.",
+          "Nutricionista Clínica. Retorne exclusivamente JSON estruturado, denso e direto em tópicos, sem introduções ou preâmbulos fora do JSON.",
         responseMimeType: "application/json",
+        temperature: 0.2,
         thinkingConfig: {
           thinkingLevel: ThinkingLevel.LOW,
         },
@@ -191,34 +209,28 @@ app.post("/api/ai/refine-plan", async (req, res) => {
       return res.json(currentPlan || generateFallbackMealPlan(req.body));
     }
 
-    const prompt = `Você é um assistente de nutrição clínica especializado em ajustes de conduta.
-OBJETIVO DO PACIENTE: ${objetivo || "Manutenção"}
+    const prompt = `Ajuste clínico de conduta nutricional.
+OBJETIVO: ${objetivo || "Manutenção"}
 RESTRIÇÕES: ${restricoes || "Nenhuma"}
 
 PLANO ATUAL:
-[Plano Alimentar]:
-${currentPlan?.mealPlan || ""}
+[Plano Alimentar]: ${currentPlan?.mealPlan || ""}
+[Treino]: ${currentPlan?.training || ""}
+[Suplementação]: ${currentPlan?.supplements || ""}
+[Rastreamento Clínico]: ${currentPlan?.deficiencias || ""}
 
-[Treino]:
-${currentPlan?.training || ""}
-
-[Suplementação]:
-${currentPlan?.supplements || ""}
-
-[Rastreamento Clínico]:
-${currentPlan?.deficiencias || ""}
-
-INSTRUÇÃO DE AJUSTE DA NUTRICIONISTA:
+INSTRUÇÃO DE AJUSTE:
 "${instruction}"
 
-Reescreva o plano completo aplicando APENAS e EXATAMENTE as alterações solicitadas na instrução, preservando todo o restante da estrutura compacta, cabeçalho e marcadores "•". Não use asteriscos de markdown.`;
+Reescreva o plano aplicando com exatidão as alterações solicitadas, preservando os marcadores "•", cabeçalho e tópicos compactos. Não use asteriscos duplos.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateWithRetry(ai, {
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
-        systemInstruction: "Retorne o plano clínico revisado em formato JSON estruturado.",
+        systemInstruction: "Retorne o plano clínico revisado estritamente em formato JSON estruturado, direto e sem preâmbulos.",
         responseMimeType: "application/json",
+        temperature: 0.2,
         thinkingConfig: {
           thinkingLevel: ThinkingLevel.LOW,
         },
@@ -257,27 +269,28 @@ app.post("/api/ai/recipes", async (req, res) => {
       return res.json({ recipes: generateFallbackRecipes(recipeQuery || "", count) });
     }
 
-    const prompt = `Você é um chef gourmet de culinária funcional e nutricionista clínico.
-Objetivo Clínico: ${objetivo || "Alimentação Saudável e Equilibrada"}
-Restrições / Alergias: ${restricoes || "Nenhuma"}
-Pedido do usuário: "${recipeQuery}"
-Quantidade de receitas solicitadas: ${count}
+    const prompt = `Chef gourmet funcional e nutricionista.
+Objetivo: ${objetivo || "Alimentação Saudável e Equilibrada"}
+Restrições: ${restricoes || "Nenhuma"}
+Pedido: "${recipeQuery}"
+Quantidade exata: ${count}
 
-Crie EXATAMENTE ${count} receitas inovadoras, práticas, incrivelmente saborosas e funcionais para este pedido.
-Para cada receita forneça:
-- nome criativo e apetitoso
-- tempo estimado de preparo (ex: 20 min)
-- ingredientes em lista com marcadores "• " e medidas claras
-- modo de preparo passo a passo detalhado e fácil
+Crie ${count} receitas inovadoras, práticas e funcionais.
+Para cada receita:
+- nome apetitoso
+- tempo estimado (ex: 15 min)
+- ingredientes em lista com marcadores "• "
+- modo de preparo passo a passo direto
 - informação nutricional aproximada (calorias, proteínas, carboidratos, gorduras boas e fibras).
-NÃO use asteriscos de markdown (**).`;
+Sem asteriscos de markdown (**).`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateWithRetry(ai, {
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
-        systemInstruction: "Retorne uma lista JSON com as receitas solicitadas.",
+        systemInstruction: "Retorne exclusivamente a lista JSON com as receitas solicitadas, sem preâmbulos.",
         responseMimeType: "application/json",
+        temperature: 0.2,
         thinkingConfig: {
           thinkingLevel: ThinkingLevel.LOW,
         },
@@ -329,29 +342,50 @@ app.post("/api/ai/chat-suggest", async (req, res) => {
       });
     }
 
-    const prompt = `Você é a Dra. Maria Eduarda, Nutricionista Clínica atenciosa e de referência.
+    const prompt = `Dra. Maria Eduarda, Nutricionista Clínica.
 Paciente: ${patientName || "Paciente"}
 Objetivo: ${objetivo || "Saúde e bem-estar"}
-Contexto recente: ${lastMealPlanSummary || "Acompanhamento nutricional ativo"}
-Última mensagem enviada pelo paciente: "${lastPatientMessage}"
+Contexto: ${lastMealPlanSummary || "Acompanhamento ativo"}
+Última mensagem do paciente: "${lastPatientMessage}"
 
-Escreva uma resposta calorosa, técnica, motivadora e acolhedora em português para o chat de atendimento.
-Use emojis apropriados. Seja direto(a), esclareça a dúvida com segurança profissional e encoraje o progresso.
-Retorne APENAS o texto da mensagem sugerida sem aspas ou introduções.`;
+Escreva uma resposta acolhedora, técnica e motivadora em português para chat.
+Use emojis pertinentes, esclareça a dúvida com segurança profissional e encoraje a adesão ao plano.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateWithRetry(ai, {
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
-        systemInstruction: "Você é Maria Eduarda, nutricionista clínica. Responda diretamente como mensagem de WhatsApp/Chat.",
+        systemInstruction: "Retorne uma resposta JSON direta com o campo 'suggestion'. Sem preâmbulos.",
+        responseMimeType: "application/json",
+        temperature: 0.2,
         thinkingConfig: {
           thinkingLevel: ThinkingLevel.LOW,
+        },
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            suggestion: { type: Type.STRING },
+          },
+          required: ["suggestion"],
         },
       },
     });
 
-    const text = response.text?.trim() || `Olá ${patientName || ""}! Fico muito feliz em ver seu empenho com o plano. Estou aqui para ajustar qualquer detalhe que precisar! ✨`;
-    return res.json({ suggestion: text });
+    const text = response.text?.trim();
+    if (text) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.suggestion) {
+          return res.json({ suggestion: parsed.suggestion.trim() });
+        }
+      } catch {
+        return res.json({ suggestion: text });
+      }
+    }
+
+    return res.json({
+      suggestion: `Olá ${patientName || ""}! Fico muito feliz em ver seu empenho com o plano. Estou aqui para ajustar qualquer detalhe que precisar! ✨`,
+    });
   } catch (error: any) {
     console.error("Erro ao sugerir resposta de chat:", error?.message || error);
     const { patientName } = req.body;

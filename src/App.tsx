@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ReportRecord,
   Appointment,
   ChatMessage,
+  RecipeItem,
   UserRole,
   AppView,
 } from './types';
-import { dataStore } from './services/storage';
+import { dataStore, getPinnedPatientCodes } from './services/storage';
 import { exportBackupJSON } from './lib/utils';
 import { BackgroundDecoration } from './components/BackgroundDecoration';
 import { Navbar } from './components/Navbar';
@@ -19,6 +20,11 @@ import { AgendaView } from './components/AgendaView';
 import { SmartKitchenView } from './components/SmartKitchenView';
 import { ChatHubView, ChatView } from './components/ChatView';
 import { PatientDashboardView } from './components/PatientDashboardView';
+import {
+  NutritionCalculatorView,
+  CalculatorSessionData,
+  DEFAULT_CALCULATOR_SESSION,
+} from './components/NutritionCalculatorView';
 import { NutriLoginModal } from './components/NutriLoginModal';
 import { PatientLoginModal } from './components/PatientLoginModal';
 import { ImportBackupModal } from './components/ImportBackupModal';
@@ -47,6 +53,9 @@ export default function App() {
   const [showPatientLogin, setShowPatientLogin] = useState(false);
   const [showImportBackup, setShowImportBackup] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Calculator Session State (in-memory only, starts completely neutral/empty)
+  const [calculatorSession, setCalculatorSession] = useState<CalculatorSessionData>(DEFAULT_CALCULATOR_SESSION);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -91,6 +100,11 @@ export default function App() {
     };
   }, []);
 
+  // Ensure scroll is at top on screen change
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [currentView]);
+
   // Login handlers
   const handleNutriLoginSuccess = () => {
     setRole('nutri');
@@ -114,22 +128,31 @@ export default function App() {
     setPatientCode('');
     setActiveReport(null);
     setActiveChatPatient(null);
+    setCalculatorSession(DEFAULT_CALCULATOR_SESSION);
     localStorage.removeItem('nutrismart_session_role');
     localStorage.removeItem('nutrismart_session_patient_code');
     showToast('Você encerrou a sessão.');
   };
 
-  // Export Backup
+  // Export Complete Backup
   const handleExportBackup = () => {
-    exportBackupJSON(reports, agenda, chatMessages);
-    showToast('Arquivo de backup baixado com sucesso!');
+    const recipes = dataStore.getRecipes();
+    const calcState = dataStore.getCalculatorState() || calculatorSession;
+    const pinnedPatients = getPinnedPatientCodes();
+    exportBackupJSON(reports, agenda, chatMessages, recipes, calcState, pinnedPatients);
+    showToast('Arquivo de backup completo baixado com sucesso!');
   };
 
-  // Import Backup
+  // Import Complete Backup
   const handleImportBackupData = async (data: {
     reports?: ReportRecord[];
     agenda?: Appointment[];
+    appointments?: Appointment[];
     chatMessages?: ChatMessage[];
+    allMessages?: ChatMessage[];
+    recipes?: RecipeItem[];
+    calculatorState?: any;
+    pinnedPatients?: string[];
   }) => {
     await dataStore.restoreBackup(data);
     showToast('Backup restaurado e sincronizado com sucesso!');
@@ -150,19 +173,74 @@ export default function App() {
     const patientReports = reports.filter((r) => r.patientCode.toUpperCase() === code.toUpperCase());
     const resolvedName = name || (patientReports.length > 0 ? patientReports[0].formData.nome : code);
     setActiveChatPatient({ code, name: resolvedName });
+    dataStore.markMessagesAsRead(code);
     setCurrentView('chat-room');
   };
 
-  // Calculate unread chat messages for nutritionist
-  const unreadChatCount = chatMessages.filter((m) => m.sender === 'patient').length;
+  // Calculate unread chat messages for nutritionist:
+  // Strict rule: Only patient messages that are simultaneously:
+  // 1. Unread (read === false)
+  // 2. Unanswered by the professional (no subsequent reply from nutri)
+  // 3. Not currently open in chat-room
+  const unreadChatCount = useMemo(() => {
+    return chatMessages.filter((m) => {
+      if (m.sender !== 'patient') return false;
+      if (m.read === true) return false;
+
+      // If currently open in chat-room with this patient, treat as viewed
+      if (
+        currentView === 'chat-room' &&
+        activeChatPatient?.code &&
+        activeChatPatient.code.toUpperCase() === m.patientCode.toUpperCase()
+      ) {
+        return false;
+      }
+
+      // Check if professional has replied after this patient message
+      const hasNutriReply = chatMessages.some(
+        (reply) =>
+          reply.patientCode.toUpperCase() === m.patientCode.toUpperCase() &&
+          reply.sender === 'nutri' &&
+          new Date(reply.timestamp).getTime() >= new Date(m.timestamp).getTime()
+      );
+      if (hasNutriReply) return false;
+
+      return true;
+    }).length;
+  }, [chatMessages, currentView, activeChatPatient]);
+
+  // History stack for multi-level navigation
+  const [viewHistory, setViewHistory] = useState<AppView[]>([]);
+
+  const handleNavigate = (view: AppView) => {
+    if (view === currentView) return;
+    setViewHistory((prev) => [...prev, currentView]);
+    if (view === 'new-form') {
+      setFormPatientCode(undefined);
+    }
+    setCurrentView(view);
+  };
+
+  const handleBack = () => {
+    if (viewHistory.length > 0) {
+      const previous = viewHistory[viewHistory.length - 1];
+      setViewHistory((prev) => prev.slice(0, -1));
+      setCurrentView(previous);
+    } else {
+      setCurrentView('dashboard');
+    }
+  };
+
+  const handleGoLobby = () => {
+    setViewHistory([]);
+    setCurrentView('dashboard');
+  };
 
   return (
-    <div className={`text-slate-900 flex flex-col relative font-sans selection:bg-emerald-500 selection:text-white overflow-x-hidden ${
-      role === 'guest' ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'
-    }`}>
-      {/* 5-Second Clinical Loading Splash Screen */}
+    <div className="text-slate-900 flex flex-col relative font-sans selection:bg-emerald-500 selection:text-white min-h-screen w-full">
+      {/* 4-Second Clinical Loading Splash Screen */}
       {showSplash && (
-        <SplashScreen onFinish={() => setShowSplash(false)} durationMs={4500} />
+        <SplashScreen onFinish={() => setShowSplash(false)} durationMs={4000} />
       )}
 
       {/* Dynamic Ambient Background */}
@@ -177,18 +255,18 @@ export default function App() {
         onOpenNutriLogin={() => setShowNutriLogin(true)}
         onOpenPatientLogin={() => setShowPatientLogin(true)}
         onLogout={handleLogout}
-        onNavigate={(view) => {
-          if (view === 'new-form') {
-            setFormPatientCode(undefined);
-          }
-          setCurrentView(view);
-        }}
+        onNavigate={handleNavigate}
+        onBack={handleBack}
+        onGoLobby={handleGoLobby}
         onExportBackup={handleExportBackup}
         onImportBackup={() => setShowImportBackup(true)}
       />
 
-      {/* Main App View Router */}
-      <main className={role === 'guest' ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : 'flex-1 pb-16'}>
+      {/* Main App View Router with Fluid Global Transitions */}
+      <main
+        key={`${role}-${currentView}`}
+        className={role === 'guest' ? 'relative z-10 flex-1 min-h-[calc(100vh-3.5rem)] flex flex-col justify-center items-center px-3.5 sm:px-6 py-4 animate-view-transition' : 'relative z-10 flex-1 pb-8 animate-view-transition'}
+      >
         {/* 1. GUEST LANDING VIEW */}
         {role === 'guest' && (
           <LandingView
@@ -210,12 +288,19 @@ export default function App() {
           <NutriDashboard
             reports={reports}
             agenda={agenda}
-            onNewConsultation={() => handleNewConsultation()}
-            onViewPatients={() => setCurrentView('patients')}
-            onViewAgenda={() => setCurrentView('agenda')}
-            onViewKitchen={() => setCurrentView('kitchen')}
-            onViewChat={() => setCurrentView('chat-hub')}
-            onSelectReport={handleOpenReport}
+            onNewConsultation={() => {
+              setFormPatientCode(undefined);
+              handleNavigate('new-form');
+            }}
+            onViewPatients={() => handleNavigate('patients')}
+            onViewAgenda={() => handleNavigate('agenda')}
+            onViewKitchen={() => handleNavigate('kitchen')}
+            onViewChat={() => handleNavigate('chat-hub')}
+            onViewCalculator={() => handleNavigate('calculator')}
+            onSelectReport={(report) => {
+              setActiveReport(report);
+              handleNavigate('report-view');
+            }}
             onExportBackup={handleExportBackup}
             onImportBackup={() => setShowImportBackup(true)}
           />
@@ -228,10 +313,10 @@ export default function App() {
             initialPatientCode={formPatientCode}
             onPlanGenerated={(report) => {
               setActiveReport(report);
-              setCurrentView('report-view');
+              handleNavigate('report-view');
               showToast(`Prescrição inteligente gerada com sucesso para ${report.formData.nome}!`);
             }}
-            onBack={() => setCurrentView('dashboard')}
+            onBack={handleBack}
           />
         )}
 
@@ -239,7 +324,7 @@ export default function App() {
         {role === 'nutri' && currentView === 'report-view' && activeReport && (
           <ClinicalReportView
             report={activeReport}
-            onBack={() => setCurrentView('dashboard')}
+            onBack={handleBack}
             onNavigateToChat={(code) => handleOpenChatForPatient(code, activeReport.formData.nome)}
             onUpdateReport={(updated) => {
               setActiveReport(updated);
@@ -252,24 +337,29 @@ export default function App() {
         {role === 'nutri' && currentView === 'patients' && (
           <PatientsListView
             reports={reports}
-            onSelectReport={handleOpenReport}
+            messages={chatMessages}
+            onOpenChat={(code, name) => handleOpenChatForPatient(code, name)}
+            onSelectReport={(report) => {
+              setActiveReport(report);
+              handleNavigate('report-view');
+            }}
             onNewConsultationForPatient={(code) => handleNewConsultation(code)}
             onDeleteReport={async (id) => {
               await dataStore.deleteReport(id);
               showToast('Prontuário removido.');
             }}
-            onBack={() => setCurrentView('dashboard')}
+            onBack={handleBack}
           />
         )}
 
         {/* 6. CLINIC AGENDA QUALISAN */}
         {role === 'nutri' && currentView === 'agenda' && (
-          <AgendaView agenda={agenda} onBack={() => setCurrentView('dashboard')} />
+          <AgendaView agenda={agenda} onBack={handleBack} />
         )}
 
         {/* 7. SMART KITCHEN (GASTRONOMY LAB) */}
         {role === 'nutri' && currentView === 'kitchen' && (
-          <SmartKitchenView onBack={() => setCurrentView('dashboard')} />
+          <SmartKitchenView onBack={handleBack} />
         )}
 
         {/* 8. CHAT HUB (ALL PATIENT CONVERSATIONS) */}
@@ -278,30 +368,40 @@ export default function App() {
             reports={reports}
             messages={chatMessages}
             onSelectChat={(code, name) => handleOpenChatForPatient(code, name)}
-            onBack={() => setCurrentView('dashboard')}
+            onBack={handleBack}
           />
         )}
 
-        {/* 9. ACTIVE CHAT ROOM (NUTRI SENDER) */}
+        {/* 10. ACTIVE CHAT ROOM (NUTRI SENDER) */}
         {role === 'nutri' && currentView === 'chat-room' && activeChatPatient && (
           <ChatView
             patientCode={activeChatPatient.code}
             patientName={activeChatPatient.name}
             senderRole="nutri"
             messages={chatMessages}
+            reports={reports}
             latestReport={reports.find((r) => r.patientCode === activeChatPatient.code)}
-            onBack={() => setCurrentView('chat-hub')}
-            onViewReport={() => {
-              const rep = reports.find((r) => r.patientCode === activeChatPatient.code);
+            onBack={handleBack}
+            onViewReport={(selectedRep) => {
+              const rep = selectedRep || reports.find((r) => r.patientCode === activeChatPatient.code);
               if (rep) {
                 setActiveReport(rep);
-                setCurrentView('report-view');
+                handleNavigate('report-view');
               }
             }}
           />
         )}
 
-        {/* 10. PATIENT PORTAL DASHBOARD */}
+        {/* 11. CLINICAL NUTRITION CALCULATOR */}
+        {role === 'nutri' && currentView === 'calculator' && (
+          <NutritionCalculatorView
+            onBack={handleBack}
+            sessionData={calculatorSession}
+            onUpdateSession={setCalculatorSession}
+          />
+        )}
+
+        {/* 12. PATIENT PORTAL DASHBOARD */}
         {role === 'patient' && (
           <PatientDashboardView
             patientCode={patientCode}

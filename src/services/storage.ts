@@ -1,4 +1,4 @@
-import { ReportRecord, ChatMessage, Appointment, PatientFormData } from '../types';
+import { ReportRecord, ChatMessage, Appointment, PatientFormData, RecipeItem } from '../types';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, User } from 'firebase/auth';
 import {
@@ -17,6 +17,8 @@ const STORAGE_KEYS = {
   REPORTS: 'nutrismart_reports_v1',
   MESSAGES: 'nutrismart_messages_v1',
   AGENDA: 'nutrismart_agenda_v1',
+  RECIPES: 'nutrismart_saved_recipes_v1',
+  CALCULATOR: 'nutrismart_calculator_v1',
 };
 
 declare global {
@@ -71,22 +73,124 @@ export function setLocalData<T>(key: string, value: T): void {
   }
 }
 
+export function getPinnedPatientCodes(): string[] {
+  return getLocalData<string[]>('nutrismart_pinned_patients_v1', []);
+}
+
+export function togglePinnedPatientCode(code: string): string[] {
+  const current = getPinnedPatientCodes();
+  const upper = code.toUpperCase();
+  const updated = current.includes(upper) ? current.filter((c) => c !== upper) : [upper, ...current];
+  setLocalData('nutrismart_pinned_patients_v1', updated);
+  return updated;
+}
+
+export interface PatientRecipeQuota {
+  recipesGeneratedToday: number;
+  lastGenerationDate: string;
+}
+
+export function getPatientRecipeQuota(patientCode?: string): PatientRecipeQuota {
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (!patientCode) {
+    return { recipesGeneratedToday: 0, lastGenerationDate: todayStr };
+  }
+  const key = `nutrismart_quota_${patientCode.toUpperCase()}`;
+  const stored = getLocalData<PatientRecipeQuota | null>(key, null);
+  if (!stored || stored.lastGenerationDate !== todayStr) {
+    const fresh: PatientRecipeQuota = {
+      recipesGeneratedToday: 0,
+      lastGenerationDate: todayStr,
+    };
+    setLocalData(key, fresh);
+    return fresh;
+  }
+  return stored;
+}
+
+export function incrementPatientRecipeQuota(patientCode?: string, count: number = 1): PatientRecipeQuota {
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (!patientCode) {
+    return { recipesGeneratedToday: 0, lastGenerationDate: todayStr };
+  }
+  const key = `nutrismart_quota_${patientCode.toUpperCase()}`;
+  const current = getPatientRecipeQuota(patientCode);
+  const updated: PatientRecipeQuota = {
+    recipesGeneratedToday: Math.min(4, (current.recipesGeneratedToday || 0) + count),
+    lastGenerationDate: todayStr,
+  };
+  setLocalData(key, updated);
+  return updated;
+}
+
 // Multi-storage synchronization interface
 export class DataStore {
   private reportsListeners: Array<(reports: ReportRecord[]) => void> = [];
   private messagesListeners: Array<(messages: ChatMessage[]) => void> = [];
   private agendaListeners: Array<(agenda: Appointment[]) => void> = [];
+  private recipesListeners: Array<(recipes: RecipeItem[]) => void> = [];
+  private calculatorListeners: Array<(data: any) => void> = [];
   private statusListeners: Array<(status: 'synced' | 'connecting' | 'offline') => void> = [];
 
   private status: 'synced' | 'connecting' | 'offline' = 'connecting';
   private reports: ReportRecord[] = [];
   private messages: ChatMessage[] = [];
   private agenda: Appointment[] = [];
+  private recipes: RecipeItem[] = [];
+  private calculatorState: any = null;
+  private syncChannel: BroadcastChannel | null = null;
 
   constructor() {
     this.reports = getLocalData<ReportRecord[]>(STORAGE_KEYS.REPORTS, []);
     this.messages = getLocalData<ChatMessage[]>(STORAGE_KEYS.MESSAGES, []);
     this.agenda = getLocalData<Appointment[]>(STORAGE_KEYS.AGENDA, []);
+    this.recipes = getLocalData<RecipeItem[]>(STORAGE_KEYS.RECIPES, []);
+    this.calculatorState = getLocalData<any>(STORAGE_KEYS.CALCULATOR, null);
+
+    // Instant Cross-Tab & Cross-Window Local Synchronization
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        this.syncChannel = new BroadcastChannel('nutrismart_sync_channel');
+        this.syncChannel.onmessage = () => {
+          this.syncFromLocal();
+        };
+      }
+    } catch {
+      // Ignore if not supported in environment
+    }
+
+    // Ensure initial mock messages are marked as read so no false badge appears
+    let cleaned = false;
+    this.messages = this.messages.map((m) => {
+      if (m.id === 'msg_init_2' && m.read !== true) {
+        cleaned = true;
+        return { ...m, read: true };
+      }
+      return m;
+    });
+    if (cleaned) {
+      setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
+    }
+
+    // Ensure all existing reports have a registered password so credentials block is always populated
+    let reportsCleaned = false;
+    this.reports = this.reports.map((r) => {
+      if (!r.formData.senha) {
+        reportsCleaned = true;
+        const fallbackPass = r.patientCode.toUpperCase() === 'ANA1' ? 'ana123' : `Nutri${r.patientCode || '123'}$`;
+        return {
+          ...r,
+          formData: {
+            ...r.formData,
+            senha: fallbackPass,
+          },
+        };
+      }
+      return r;
+    });
+    if (reportsCleaned) {
+      setLocalData(STORAGE_KEYS.REPORTS, this.reports);
+    }
 
     if (firebaseDb) {
       this.initFirestoreSync();
@@ -104,10 +208,20 @@ export class DataStore {
     this.statusListeners.forEach((fn) => fn(this.status));
   }
 
+  private broadcastLocalUpdate() {
+    try {
+      this.syncChannel?.postMessage({ type: 'sync', timestamp: Date.now() });
+    } catch {
+      // Ignore broadcast errors
+    }
+  }
+
   private syncFromLocal() {
     this.reports = getLocalData<ReportRecord[]>(STORAGE_KEYS.REPORTS, []);
     this.messages = getLocalData<ChatMessage[]>(STORAGE_KEYS.MESSAGES, []);
     this.agenda = getLocalData<Appointment[]>(STORAGE_KEYS.AGENDA, []);
+    this.recipes = getLocalData<RecipeItem[]>(STORAGE_KEYS.RECIPES, []);
+    this.calculatorState = getLocalData<any>(STORAGE_KEYS.CALCULATOR, null);
     this.notifyAll();
   }
 
@@ -115,6 +229,8 @@ export class DataStore {
     this.reportsListeners.forEach((fn) => fn(this.reports));
     this.messagesListeners.forEach((fn) => fn(this.messages));
     this.agendaListeners.forEach((fn) => fn(this.agenda));
+    this.recipesListeners.forEach((fn) => fn(this.recipes));
+    this.calculatorListeners.forEach((fn) => fn(this.calculatorState));
   }
 
   private initFirestoreSync() {
@@ -165,6 +281,32 @@ export class DataStore {
         },
         () => {}
       );
+
+      const recipesRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes');
+      onSnapshot(
+        recipesRef,
+        (snapshot) => {
+          const remoteRecipes = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as unknown as RecipeItem));
+          this.recipes = remoteRecipes;
+          setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
+          this.recipesListeners.forEach((fn) => fn(this.recipes));
+        },
+        () => {}
+      );
+
+      const calculatorRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'calculator');
+      onSnapshot(
+        calculatorRef,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const data = snapshot.docs[0].data();
+            this.calculatorState = data;
+            setLocalData(STORAGE_KEYS.CALCULATOR, this.calculatorState);
+            this.calculatorListeners.forEach((fn) => fn(this.calculatorState));
+          }
+        },
+        () => {}
+      );
     } catch (e) {
       console.warn('Firestore subscription error:', e);
       this.status = 'offline';
@@ -196,6 +338,22 @@ export class DataStore {
     };
   }
 
+  public onRecipes(callback: (recipes: RecipeItem[]) => void) {
+    this.recipesListeners.push(callback);
+    callback(this.recipes);
+    return () => {
+      this.recipesListeners = this.recipesListeners.filter((fn) => fn !== callback);
+    };
+  }
+
+  public onCalculator(callback: (data: any) => void) {
+    this.calculatorListeners.push(callback);
+    callback(this.calculatorState);
+    return () => {
+      this.calculatorListeners = this.calculatorListeners.filter((fn) => fn !== callback);
+    };
+  }
+
   public onStatus(callback: (status: 'synced' | 'connecting' | 'offline') => void) {
     this.statusListeners.push(callback);
     callback(this.status);
@@ -217,6 +375,14 @@ export class DataStore {
     return this.onMessages(callback);
   }
 
+  public subscribeRecipes(callback: (recipes: RecipeItem[]) => void) {
+    return this.onRecipes(callback);
+  }
+
+  public subscribeCalculator(callback: (data: any) => void) {
+    return this.onCalculator(callback);
+  }
+
   public getReports(): ReportRecord[] {
     return [...this.reports];
   }
@@ -229,6 +395,14 @@ export class DataStore {
     return [...this.messages];
   }
 
+  public getRecipes(): RecipeItem[] {
+    return [...this.recipes];
+  }
+
+  public getCalculatorState(): any {
+    return this.calculatorState;
+  }
+
   public async seedInitialData(): Promise<void> {
     return this.injectMockData();
   }
@@ -236,22 +410,40 @@ export class DataStore {
   public async restoreBackup(data: {
     reports?: ReportRecord[];
     agenda?: Appointment[];
+    appointments?: Appointment[];
     chatMessages?: ChatMessage[];
+    allMessages?: ChatMessage[];
+    recipes?: RecipeItem[];
+    calculatorState?: any;
+    pinnedPatients?: string[];
   }): Promise<void> {
     if (data.reports) {
       for (const r of data.reports) {
         await this.saveReport(r);
       }
     }
-    if (data.agenda) {
-      for (const a of data.agenda) {
+    const appts = data.agenda || data.appointments;
+    if (appts) {
+      for (const a of appts) {
         await this.saveAppointment(a);
       }
     }
-    if (data.chatMessages) {
-      for (const m of data.chatMessages) {
+    const msgs = data.chatMessages || data.allMessages;
+    if (msgs) {
+      for (const m of msgs) {
         await this.sendMessage(m);
       }
+    }
+    if (data.recipes && Array.isArray(data.recipes)) {
+      for (const rec of data.recipes) {
+        await this.saveRecipe(rec);
+      }
+    }
+    if (data.calculatorState) {
+      await this.saveCalculatorState(data.calculatorState);
+    }
+    if (data.pinnedPatients && Array.isArray(data.pinnedPatients)) {
+      setLocalData('nutrismart_pinned_patients_v1', data.pinnedPatients);
     }
   }
 
@@ -265,6 +457,7 @@ export class DataStore {
     }
     setLocalData(STORAGE_KEYS.REPORTS, this.reports);
     this.reportsListeners.forEach((fn) => fn(this.reports));
+    this.broadcastLocalUpdate();
 
     if (firebaseDb) {
       try {
@@ -281,6 +474,7 @@ export class DataStore {
     this.reports = this.reports.filter((r) => r.id !== id);
     setLocalData(STORAGE_KEYS.REPORTS, this.reports);
     this.reportsListeners.forEach((fn) => fn(this.reports));
+    this.broadcastLocalUpdate();
 
     if (firebaseDb) {
       try {
@@ -294,10 +488,15 @@ export class DataStore {
   // Send a chat message
   public async sendMessage(msg: Omit<ChatMessage, 'id'>): Promise<void> {
     const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-    const newMsg: ChatMessage = { id, ...msg };
+    const newMsg: ChatMessage = {
+      id,
+      ...msg,
+      read: msg.read ?? (msg.sender === 'nutri' ? true : false),
+    };
     this.messages.push(newMsg);
     setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
     this.messagesListeners.forEach((fn) => fn(this.messages));
+    this.broadcastLocalUpdate();
 
     if (firebaseDb) {
       try {
@@ -305,6 +504,38 @@ export class DataStore {
         await setDoc(docRef, newMsg);
       } catch (e) {
         console.warn('Firestore message save error:', e);
+      }
+    }
+  }
+
+  // Mark all messages from a patient as read
+  public async markMessagesAsRead(patientCode: string): Promise<void> {
+    let changed = false;
+    this.messages = this.messages.map((m) => {
+      if (m.patientCode.toUpperCase() === patientCode.toUpperCase() && m.sender === 'patient' && !m.read) {
+        changed = true;
+        return { ...m, read: true };
+      }
+      return m;
+    });
+
+    if (changed) {
+      setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
+      this.messagesListeners.forEach((fn) => fn(this.messages));
+      this.broadcastLocalUpdate();
+
+      if (firebaseDb) {
+        try {
+          const patientMsgs = this.messages.filter(
+            (m) => m.patientCode.toUpperCase() === patientCode.toUpperCase() && m.sender === 'patient'
+          );
+          for (const m of patientMsgs) {
+            const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'messages', m.id);
+            await setDoc(docRef, m, { merge: true });
+          }
+        } catch (e) {
+          console.warn('Firestore mark as read error:', e);
+        }
       }
     }
   }
@@ -326,6 +557,7 @@ export class DataStore {
     }
     setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
     this.agendaListeners.forEach((fn) => fn(this.agenda));
+    this.broadcastLocalUpdate();
 
     if (firebaseDb) {
       try {
@@ -342,6 +574,7 @@ export class DataStore {
     this.agenda = this.agenda.filter((a) => a.id !== id);
     setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
     this.agendaListeners.forEach((fn) => fn(this.agenda));
+    this.broadcastLocalUpdate();
 
     if (firebaseDb) {
       try {
@@ -352,29 +585,100 @@ export class DataStore {
     }
   }
 
-  // Export 3-in-1 consolidated JSON backup
+  // Save or toggle recipe
+  public async saveRecipe(recipe: RecipeItem): Promise<void> {
+    const recipeId = (recipe as any).id || recipe.nome.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const itemWithId = { ...recipe, id: recipeId };
+    const existingIndex = this.recipes.findIndex(
+      (r) => r.nome.trim().toLowerCase() === recipe.nome.trim().toLowerCase()
+    );
+    if (existingIndex >= 0) {
+      this.recipes[existingIndex] = itemWithId;
+    } else {
+      this.recipes.unshift(itemWithId);
+    }
+    setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
+    this.recipesListeners.forEach((fn) => fn(this.recipes));
+    this.broadcastLocalUpdate();
+
+    if (firebaseDb) {
+      try {
+        const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes', recipeId);
+        await setDoc(docRef, itemWithId, { merge: true });
+      } catch (e) {
+        console.warn('Firestore recipe save error:', e);
+      }
+    }
+  }
+
+  // Delete saved recipe
+  public async deleteRecipe(recipeName: string): Promise<void> {
+    const recipeId = recipeName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    this.recipes = this.recipes.filter(
+      (r) => r.nome.trim().toLowerCase() !== recipeName.trim().toLowerCase()
+    );
+    setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
+    this.recipesListeners.forEach((fn) => fn(this.recipes));
+    this.broadcastLocalUpdate();
+
+    if (firebaseDb) {
+      try {
+        await deleteDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes', recipeId));
+      } catch (e) {
+        console.warn('Firestore recipe delete error:', e);
+      }
+    }
+  }
+
+  // Save calculator session state
+  public async saveCalculatorState(data: any): Promise<void> {
+    this.calculatorState = data;
+    setLocalData(STORAGE_KEYS.CALCULATOR, data);
+    this.calculatorListeners.forEach((fn) => fn(this.calculatorState));
+    this.broadcastLocalUpdate();
+
+    if (firebaseDb) {
+      try {
+        const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'calculator', 'latest');
+        await setDoc(docRef, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+      } catch (e) {
+        console.warn('Firestore calculator save error:', e);
+      }
+    }
+  }
+
+  // Export consolidated JSON backup with all system entities
   public exportConsolidatedBackup(): string {
     const data = {
-      version: '1.00',
+      version: '1.10',
       exportedAt: new Date().toISOString(),
       reports: this.reports,
       allMessages: this.messages,
       appointments: this.agenda,
+      recipes: this.recipes,
+      calculatorState: this.calculatorState,
+      pinnedPatients: getPinnedPatientCodes(),
     };
     return JSON.stringify(data, null, 2);
   }
 
-  // Import 3-in-1 backup with validation
+  // Import complete backup with full schema validation
   public async importConsolidatedBackup(jsonString: string): Promise<{ success: boolean; count: number; error?: string }> {
     try {
       const data = JSON.parse(jsonString);
-      if (!data || (!data.reports && !data.allMessages && !data.appointments)) {
+      const hasReports = Array.isArray(data.reports);
+      const hasMessages = Array.isArray(data.allMessages) || Array.isArray(data.chatMessages);
+      const hasAgenda = Array.isArray(data.appointments) || Array.isArray(data.agenda);
+      const hasRecipes = Array.isArray(data.recipes);
+      const hasCalc = !!data.calculatorState;
+
+      if (!data || (!hasReports && !hasMessages && !hasAgenda && !hasRecipes && !hasCalc)) {
         return { success: false, count: 0, error: 'Formato de arquivo inválido. Backup incompleto ou danificado.' };
       }
 
       let totalImported = 0;
 
-      if (Array.isArray(data.reports)) {
+      if (hasReports) {
         this.reports = data.reports;
         setLocalData(STORAGE_KEYS.REPORTS, this.reports);
         totalImported += this.reports.length;
@@ -385,26 +689,56 @@ export class DataStore {
         }
       }
 
-      if (Array.isArray(data.allMessages)) {
-        this.messages = data.allMessages;
+      const msgs = data.allMessages || data.chatMessages;
+      if (Array.isArray(msgs)) {
+        this.messages = msgs;
         setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
         totalImported += this.messages.length;
         if (firebaseDb) {
-          for (const m of data.allMessages) {
+          for (const m of msgs) {
             await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'messages', m.id), m);
           }
         }
       }
 
-      if (Array.isArray(data.appointments)) {
-        this.agenda = data.appointments;
+      const appts = data.appointments || data.agenda;
+      if (Array.isArray(appts)) {
+        this.agenda = appts;
         setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
         totalImported += this.agenda.length;
         if (firebaseDb) {
-          for (const a of data.appointments) {
+          for (const a of appts) {
             await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'agenda', a.id), a);
           }
         }
+      }
+
+      if (hasRecipes) {
+        this.recipes = data.recipes;
+        setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
+        totalImported += this.recipes.length;
+        if (firebaseDb) {
+          for (const rec of data.recipes) {
+            const recipeId = rec.id || rec.nome.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes', recipeId), { ...rec, id: recipeId });
+          }
+        }
+      }
+
+      if (hasCalc) {
+        this.calculatorState = data.calculatorState;
+        setLocalData(STORAGE_KEYS.CALCULATOR, this.calculatorState);
+        totalImported += 1;
+        if (firebaseDb) {
+          await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'calculator', 'latest'), {
+            ...this.calculatorState,
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+        }
+      }
+
+      if (Array.isArray(data.pinnedPatients)) {
+        setLocalData('nutrismart_pinned_patients_v1', data.pinnedPatients);
       }
 
       this.notifyAll();
@@ -448,6 +782,7 @@ export class DataStore {
           observacoes: 'Dificuldade para jantar cedo.',
           instrucoesIA: 'Focar em fontes vegetais de cálcio e densidade de nutrientes.',
           patientCode: 'ANA1',
+          senha: 'ana123',
           tipoDieta: 'Projeto Verão',
           calorias: '1500',
         },
@@ -523,6 +858,7 @@ export class DataStore {
           observacoes: 'Excelente aderência!',
           instrucoesIA: 'Aumentar aporte proteico pós-treino.',
           patientCode: 'ANA1',
+          senha: 'ana123',
           tipoDieta: 'Restrição de Carboidratos (Low Carb)',
           calorias: '1400',
         },
@@ -577,6 +913,7 @@ export class DataStore {
         sender: 'nutri',
         text: 'Olá Ana! Bem-vinda ao seu acompanhamento no NutriSmart. Qualquer dúvida com as receitas ou substituições, pode me enviar aqui!',
         timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        read: true,
       },
       {
         id: 'msg_init_2',
@@ -584,6 +921,7 @@ export class DataStore {
         sender: 'patient',
         text: 'Oi Dra. Maria Eduarda! Estou amando a panqueca de aveia da Cozinha Inteligente. Consegui treinar 4x essa semana!',
         timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+        read: true,
       },
     ];
 

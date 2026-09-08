@@ -17,6 +17,8 @@ import {
   ChevronRight,
   TrendingDown,
   TrendingUp,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { ReportRecord, ChatMessage } from '../types';
 import { SimpleLineChart } from './SimpleLineChart';
@@ -41,6 +43,7 @@ export const PatientDashboardView: React.FC<PatientDashboardViewProps> = ({
   onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<'plan' | 'evolution' | 'chat' | 'kitchen'>('plan');
+  const [showCredentials, setShowCredentials] = useState<boolean>(false);
 
   // Filter patient's reports sorted chronologically
   const patientHistory = useMemo(() => {
@@ -99,20 +102,43 @@ export const PatientDashboardView: React.FC<PatientDashboardViewProps> = ({
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-1.5 sm:pt-2 pb-10 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out">
       {/* Patient Welcome Hero */}
-      <div className="bg-gradient-to-r from-sky-700 via-sky-800 to-indigo-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+      <div className="bg-gradient-to-r from-sky-700 via-sky-800 to-indigo-900 rounded-3xl py-4 sm:py-5 px-6 sm:px-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6">
         <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold mb-3 backdrop-blur border border-white/20">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold mb-2 backdrop-blur border border-white/20">
             <Sparkles className="w-3.5 h-3.5" />
-            Portal do Paciente NutriSmart
+            Portal do Paciente
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
             Olá, {latestReport.formData.nome}! 👋
           </h1>
-          <p className="text-sky-100/90 text-sm mt-1 max-w-xl">
-            Acompanhamento com a <b>Dra. Maria Eduarda</b> • Código: <span className="font-mono font-bold bg-white/20 px-2 py-0.5 rounded">{patientCode}</span>
+          <p className="text-sky-100/90 text-sm mt-1">
+            Acompanhamento com a <b>Dra. Maria Eduarda</b>
           </p>
+          <div className="mt-2 inline-flex items-center gap-2 font-mono text-xs font-semibold bg-white/15 border border-white/20 px-3 py-1.5 rounded-xl backdrop-blur shadow-2xs">
+            <span>
+              Código:{' '}
+              <strong className="text-white font-bold tracking-wider">
+                {showCredentials ? patientCode : '••••••••'}
+              </strong>
+            </span>
+            <span className="text-white/40">|</span>
+            <span>
+              Senha:{' '}
+              <strong className="text-white font-bold tracking-wider">
+                {showCredentials ? (latestReport.formData.senha || 'ana123') : '••••••••'}
+              </strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowCredentials(!showCredentials)}
+              className="ml-1 text-sky-200 hover:text-white p-1 rounded-lg hover:bg-white/15 transition cursor-pointer active:scale-95"
+              title={showCredentials ? 'Ocultar credenciais' : 'Exibir credenciais'}
+            >
+              {showCredentials ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
 
         {/* Quick Anthropometric Stats */}
@@ -143,199 +169,212 @@ export const PatientDashboardView: React.FC<PatientDashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 bg-white/80 backdrop-blur p-1.5 rounded-2xl border border-slate-200/80 shadow-xs">
+      {/* Navigation Tabs - Responsive Zero Horizontal Scroll */}
+      <div className="w-full flex items-center gap-1.5 sm:gap-2 overflow-hidden bg-white/85 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200/80 shadow-xs">
         <button
+          type="button"
           onClick={() => setActiveTab('plan')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition ${
+          title="Meu Cardápio & Treino"
+          className={`flex-1 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition cursor-pointer select-none ${
             activeTab === 'plan'
-              ? 'bg-sky-600 text-white shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/20'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
           }`}
         >
-          <Utensils className="w-4 h-4" />
-          <span>Meu Cardápio & Treino</span>
+          <Utensils className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline whitespace-nowrap">Meu Cardápio & Treino</span>
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('evolution')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition ${
+          title="Minha Evolução"
+          className={`flex-1 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition cursor-pointer select-none ${
             activeTab === 'evolution'
-              ? 'bg-sky-600 text-white shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/20'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
           }`}
         >
-          <Activity className="w-4 h-4" />
-          <span>Minha Evolução</span>
+          <Activity className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline whitespace-nowrap">Minha Evolução</span>
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('chat')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition relative ${
+          title="Falar com a Nutri"
+          className={`flex-1 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition cursor-pointer select-none ${
             activeTab === 'chat'
-              ? 'bg-sky-600 text-white shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/20'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
           }`}
         >
-          <MessageSquare className="w-4 h-4" />
-          <span>Falar com a Nutri</span>
+          <MessageSquare className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline whitespace-nowrap">Falar com a Nutri</span>
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('kitchen')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition ${
+          title="Cozinha Inteligente"
+          className={`flex-1 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition cursor-pointer select-none ${
             activeTab === 'kitchen'
-              ? 'bg-sky-600 text-white shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100'
+              ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/20'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
           }`}
         >
-          <UtensilsCrossed className="w-4 h-4" />
-          <span>Cozinha Inteligente</span>
+          <UtensilsCrossed className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline whitespace-nowrap">Cozinha Inteligente</span>
         </button>
       </div>
 
-      {/* Tab Content 1: Meu Cardápio */}
-      {activeTab === 'plan' && (
-        <div className="space-y-6 animate-in fade-in">
-          {/* Action Print & Summary */}
-          <div className="bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-md space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-100 gap-3">
-              <div>
-                <h2 className="text-xl font-extrabold text-slate-900">Seu Plano Nutricional Ativo</h2>
+      {/* Tab Panels with Fluid Transitions */}
+      <div key={activeTab} className="animate-view-transition">
+        {/* Tab Content 1: Meu Cardápio */}
+        {activeTab === 'plan' && (
+          <div className="space-y-6">
+            {/* Action Print & Summary */}
+            <div className="bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-md space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-100 gap-3">
+                <div>
+                  <h2 className="text-xl font-extrabold text-slate-900">Seu Plano Nutricional Ativo</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Atualizado em {new Date(latestReport.date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Imprimir Cardápio</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Meal Plan */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1">
+                  <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                    <Utensils className="w-4 h-4 text-emerald-600" />
+                    Refeições do Dia
+                  </h3>
+                  <BlockCopyButton
+                    title="Meu Plano Alimentar"
+                    content={latestReport.aiData?.mealPlan || latestReport.aiMealPlan || ''}
+                  />
+                </div>
+
+                <div className="p-5 rounded-2xl bg-emerald-50/40 border border-emerald-100 text-slate-800 text-sm font-mono whitespace-pre-wrap leading-relaxed">
+                  {latestReport.aiData?.mealPlan || latestReport.aiMealPlan || 'Plano em elaboração.'}
+                </div>
+              </div>
+
+              {/* Training */}
+              {latestReport.aiData?.training && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between pb-1">
+                    <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                      <Dumbbell className="w-4 h-4 text-sky-600" />
+                      Treino & Atividade Física Recomendada
+                    </h3>
+                    <BlockCopyButton title="Meu Treino" content={latestReport.aiData.training} />
+                  </div>
+                  <div className="p-4 rounded-2xl bg-sky-50/40 border border-sky-100 text-slate-800 text-sm font-mono whitespace-pre-wrap leading-relaxed">
+                    {latestReport.aiData.training}
+                  </div>
+                </div>
+              )}
+
+              {/* Supplementation */}
+              {latestReport.aiData?.supplements && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between pb-1">
+                    <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                      <Pill className="w-4 h-4 text-purple-600" />
+                      Suplementação Prescrita
+                    </h3>
+                    <BlockCopyButton title="Minha Suplementação" content={latestReport.aiData.supplements} />
+                  </div>
+                  <div className="p-4 rounded-2xl bg-purple-50/40 border border-purple-100 text-slate-800 text-sm font-mono whitespace-pre-wrap leading-relaxed">
+                    {latestReport.aiData.supplements}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab Content 2: Minha Evolução */}
+        {activeTab === 'evolution' && (
+          <div className="space-y-6">
+            <div className="bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-md space-y-5">
+              <div className="pb-3 border-b border-slate-100">
+                <h2 className="text-xl font-extrabold text-slate-900">Seus Gráficos de Evolução Corporal</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Atualizado em {new Date(latestReport.date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  Acompanhe o progresso do seu peso, IMC e medidas ao longo do acompanhamento
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Imprimir Cardápio</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Meal Plan */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between pb-1">
-                <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                  <Utensils className="w-4 h-4 text-emerald-600" />
-                  Refeições do Dia
-                </h3>
-                <BlockCopyButton
-                  title="Meu Plano Alimentar"
-                  content={latestReport.aiData?.mealPlan || latestReport.aiMealPlan || ''}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <SimpleLineChart
+                  data={chartData}
+                  dataKey="peso"
+                  color="#059669"
+                  label="Evolução de Peso Corporal"
+                />
+                <SimpleLineChart
+                  data={chartData}
+                  dataKey="imc"
+                  color="#0284c7"
+                  label="Evolução de IMC"
+                />
+                <SimpleLineChart
+                  data={chartData}
+                  dataKey="abdomen"
+                  color="#f59e0b"
+                  label="Evolução de Abdômen"
+                />
+                <SimpleLineChart
+                  data={chartData}
+                  dataKey="cintura"
+                  color="#8b5cf6"
+                  label="Evolução de Cintura"
                 />
               </div>
-
-              <div className="p-5 rounded-2xl bg-emerald-50/40 border border-emerald-100 text-slate-800 text-sm font-mono whitespace-pre-wrap leading-relaxed">
-                {latestReport.aiData?.mealPlan || latestReport.aiMealPlan || 'Plano em elaboração.'}
-              </div>
-            </div>
-
-            {/* Training */}
-            {latestReport.aiData?.training && (
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between pb-1">
-                  <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                    <Dumbbell className="w-4 h-4 text-sky-600" />
-                    Treino & Atividade Física Recomendada
-                  </h3>
-                  <BlockCopyButton title="Meu Treino" content={latestReport.aiData.training} />
-                </div>
-                <div className="p-4 rounded-2xl bg-sky-50/40 border border-sky-100 text-slate-800 text-sm font-mono whitespace-pre-wrap leading-relaxed">
-                  {latestReport.aiData.training}
-                </div>
-              </div>
-            )}
-
-            {/* Supplementation */}
-            {latestReport.aiData?.supplements && (
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between pb-1">
-                  <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                    <Pill className="w-4 h-4 text-purple-600" />
-                    Suplementação Prescrita
-                  </h3>
-                  <BlockCopyButton title="Minha Suplementação" content={latestReport.aiData.supplements} />
-                </div>
-                <div className="p-4 rounded-2xl bg-purple-50/40 border border-purple-100 text-slate-800 text-sm font-mono whitespace-pre-wrap leading-relaxed">
-                  {latestReport.aiData.supplements}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Tab Content 2: Minha Evolução */}
-      {activeTab === 'evolution' && (
-        <div className="space-y-6 animate-in fade-in">
-          <div className="bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-md space-y-5">
-            <div className="pb-3 border-b border-slate-100">
-              <h2 className="text-xl font-extrabold text-slate-900">Seus Gráficos de Evolução Corporal</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Acompanhe o progresso do seu peso, IMC e medidas ao longo do acompanhamento
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SimpleLineChart
-                data={chartData}
-                dataKey="peso"
-                color="#059669"
-                label="Evolução de Peso Corporal"
-              />
-              <SimpleLineChart
-                data={chartData}
-                dataKey="imc"
-                color="#0284c7"
-                label="Evolução de IMC"
-              />
-              <SimpleLineChart
-                data={chartData}
-                dataKey="abdomen"
-                color="#f59e0b"
-                label="Evolução de Abdômen"
-              />
-              <SimpleLineChart
-                data={chartData}
-                dataKey="cintura"
-                color="#8b5cf6"
-                label="Evolução de Cintura"
-              />
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Tab Content 3: Chat com a Nutricionista */}
-      {activeTab === 'chat' && (
-        <div className="animate-in fade-in">
-          <ChatView
-            patientCode={patientCode}
-            patientName={latestReport.formData.nome}
-            senderRole="patient"
-            messages={messages}
-            latestReport={latestReport}
-            onBack={() => setActiveTab('plan')}
-          />
-        </div>
-      )}
+        {/* Tab Content 3: Chat com a Nutricionista */}
+        {activeTab === 'chat' && (
+          <div>
+            <ChatView
+              patientCode={patientCode}
+              patientName={latestReport.formData.nome}
+              senderRole="patient"
+              messages={messages}
+              latestReport={latestReport}
+              onBack={() => setActiveTab('plan')}
+            />
+          </div>
+        )}
 
-      {/* Tab Content 4: Cozinha Inteligente */}
-      {activeTab === 'kitchen' && (
-        <div className="animate-in fade-in">
-          <SmartKitchenView
-            onBack={() => setActiveTab('plan')}
-            patientGoal={latestReport.formData.objetivo}
-            patientRestrictions={latestReport.formData.restricoes}
-          />
-        </div>
-      )}
+        {/* Tab Content 4: Cozinha Inteligente */}
+        {activeTab === 'kitchen' && (
+          <div>
+            <SmartKitchenView
+              onBack={() => setActiveTab('plan')}
+              patientGoal={latestReport.formData.objetivo}
+              patientRestrictions={latestReport.formData.restricoes}
+              isPatientPortal={true}
+              patientCode={patientCode}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

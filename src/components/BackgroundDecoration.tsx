@@ -19,11 +19,6 @@ export const BackgroundDecoration: React.FC<BackgroundDecorationProps> = ({
 
       {/* Sleek Gradient Overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-white/95 via-slate-50/90 to-emerald-50/95 z-0" />
-
-      {/* Subtle Glow Lighting Orbs */}
-      <div className="absolute top-[-10%] left-[-5%] w-[45%] h-[45%] rounded-full bg-emerald-500/10 blur-[100px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] rounded-full bg-cyan-500/10 blur-[100px] pointer-events-none" />
-      <div className="absolute top-[40%] right-[15%] w-[25%] h-[25%] rounded-full bg-teal-500/5 blur-[90px] pointer-events-none" />
     </div>
   );
 };

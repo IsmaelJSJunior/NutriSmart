@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, X, Loader2 } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, X, Loader2, Database } from 'lucide-react';
 import { dataStore } from '../services/storage';
-import { ReportRecord, Appointment, ChatMessage } from '../types';
+import { ReportRecord, Appointment, ChatMessage, RecipeItem } from '../types';
 
 interface ImportBackupModalProps {
   isOpen?: boolean;
@@ -9,7 +9,12 @@ interface ImportBackupModalProps {
   onImport?: (data: {
     reports?: ReportRecord[];
     agenda?: Appointment[];
+    appointments?: Appointment[];
     chatMessages?: ChatMessage[];
+    allMessages?: ChatMessage[];
+    recipes?: RecipeItem[];
+    calculatorState?: any;
+    pinnedPatients?: string[];
   }) => Promise<void>;
   onSuccess?: (count: number) => void;
 }
@@ -24,14 +29,26 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
   const [fileName, setFileName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [parsedStats, setParsedStats] = useState<{
+    reportsCount: number;
+    agendaCount: number;
+    messagesCount: number;
+    recipesCount: number;
+    hasCalculator: boolean;
+  } | null>(null);
   const [isClosing, setIsClosing] = useState<boolean>(false);
+  const [isMounted, setIsMounted] = useState<boolean>(false);
 
-  // Scroll Lock & Escape key listener
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => setIsMounted(true), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  // Escape key listener
   useEffect(() => {
     if (!isOpen) return;
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -42,7 +59,6 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.body.style.overflow = originalOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
@@ -51,11 +67,14 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
     setIsClosing(true);
     setTimeout(() => {
       setIsClosing(false);
+      setIsMounted(false);
       onClose();
     }, 220);
   };
 
   if (isOpen === false) return null;
+
+  const isVisible = isMounted && !isClosing;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -63,10 +82,37 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
 
     setFileName(file.name);
     setError(null);
+    setParsedStats(null);
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      setFileContent(event.target?.result as string);
+      const text = event.target?.result as string;
+      setFileContent(text);
+
+      try {
+        const parsed = JSON.parse(text);
+        const reportsList = Array.isArray(parsed.reports) ? parsed.reports : [];
+        const apptsList = Array.isArray(parsed.appointments) ? parsed.appointments : (Array.isArray(parsed.agenda) ? parsed.agenda : []);
+        const msgsList = Array.isArray(parsed.allMessages) ? parsed.allMessages : (Array.isArray(parsed.chatMessages) ? parsed.chatMessages : []);
+        const recipesList = Array.isArray(parsed.recipes) ? parsed.recipes : [];
+        const hasCalc = !!parsed.calculatorState;
+
+        if (reportsList.length === 0 && apptsList.length === 0 && msgsList.length === 0 && recipesList.length === 0 && !hasCalc) {
+          setError('O arquivo selecionado não contém uma estrutura de dados reconhecida do NutriSmart.');
+          setParsedStats(null);
+        } else {
+          setParsedStats({
+            reportsCount: reportsList.length,
+            agendaCount: apptsList.length,
+            messagesCount: msgsList.length,
+            recipesCount: recipesList.length,
+            hasCalculator: hasCalc,
+          });
+        }
+      } catch {
+        setError('Arquivo corrompido ou formato JSON inválido.');
+        setParsedStats(null);
+      }
     };
     reader.onerror = () => {
       setError('Falha ao ler o arquivo selecionado.');
@@ -108,20 +154,20 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
   return (
     <div
       onClick={handleClose}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all duration-200 ease-out select-none ${
-        isClosing ? 'opacity-0' : 'opacity-100'
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md transition-all duration-300 ease-out select-none ${
+        isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative transition-all duration-200 ease-out transform ${
-          isClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+        className={`bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative transition-all duration-300 ease-out transform ${
+          isVisible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-3'
         }`}
       >
         <button
           onClick={handleClose}
           type="button"
-          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 active:scale-95"
+          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 active:scale-95 cursor-pointer"
           title="Fechar"
         >
           <X className="w-5 h-5" />
@@ -156,6 +202,21 @@ export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
             <span className="text-[10px] text-slate-400 mt-1">Formato JSON NutriSmart</span>
           </div>
         </div>
+
+        {parsedStats && (
+          <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-3 mb-4 text-xs animate-in fade-in">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-800 mb-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Backup íntegro e pronto para restauração:</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-700 font-medium">
+              <div>• {parsedStats.reportsCount} prontuários</div>
+              <div>• {parsedStats.agendaCount} compromissos</div>
+              <div>• {parsedStats.messagesCount} mensagens</div>
+              <div>• {parsedStats.recipesCount} receitas</div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs mb-4">

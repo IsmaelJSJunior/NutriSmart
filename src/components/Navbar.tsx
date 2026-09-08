@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Leaf,
   LogOut,
   Calendar,
   MessageSquare,
@@ -8,6 +7,9 @@ import {
   FileSpreadsheet,
   Users,
   Settings,
+  ArrowLeft,
+  LayoutDashboard,
+  Calculator,
 } from 'lucide-react';
 import { UserRole, AppView } from '../types';
 import { SettingsModal } from './SettingsModal';
@@ -24,6 +26,8 @@ interface NavbarProps {
   onOpenNutriLogin?: () => void;
   onOpenPatientLogin?: () => void;
   onNavigate: (view: AppView) => void;
+  onBack?: () => void;
+  onGoLobby?: () => void;
   onLogout: () => void;
   onExportBackup?: () => void;
   onImportBackup?: () => void;
@@ -38,6 +42,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNutriLogin,
   onOpenPatientLogin,
   onNavigate,
+  onBack,
+  onGoLobby,
   onLogout,
   onExportBackup,
   onImportBackup,
@@ -49,13 +55,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   // Guest Header
   if (activeRole === 'guest') {
     return (
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-slate-100/90 shadow-2xs print:hidden h-12 sm:h-14 flex items-center w-full overflow-x-hidden">
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-slate-100/90 shadow-2xs print:hidden h-11 sm:h-12 flex items-center w-full overflow-x-hidden">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 w-full flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 border border-emerald-100 shadow-2xs">
-              <Leaf className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-emerald-600/20" />
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 group cursor-default">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
+              <img src="/logo.png" alt="NutriSmart Logo" className="w-full h-full object-cover rounded-full border-0" />
             </div>
-            <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap">
+            <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap transition-all duration-300 hover:brightness-110 group-hover:brightness-110">
               Nutri<span className="text-emerald-500">Smart</span>
             </div>
           </div>
@@ -64,7 +70,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {onOpenPatientLogin && (
               <button
                 onClick={onOpenPatientLogin}
-                className="px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 shadow-2xs transition whitespace-nowrap active:scale-95 cursor-pointer"
+                className="px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold text-white bg-sky-500 hover:bg-sky-600 shadow-sm shadow-sky-500/20 transition whitespace-nowrap active:scale-95 cursor-pointer"
               >
                 Sou Paciente
               </button>
@@ -87,21 +93,48 @@ export const Navbar: React.FC<NavbarProps> = ({
   // Authenticated Nutri / Patient Header
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-slate-100 shadow-2xs print:hidden h-12 sm:h-14 flex items-center w-full overflow-x-hidden">
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-slate-100 shadow-2xs print:hidden h-11 sm:h-12 flex items-center w-full overflow-x-hidden">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 w-full flex items-center justify-between gap-2">
-          {/* Brand & Home */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0 mr-auto">
+          {/* Brand, Back Button & Home (Strict Left-to-Right Sequence) */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 mr-auto min-w-0">
+            {/* 1. Logo NutriSmart */}
             <button
               onClick={() => onNavigate(activeRole === 'nutri' ? 'dashboard' : 'patient-portal')}
-              className="flex items-center gap-1.5 sm:gap-2.5 text-left group cursor-pointer"
+              className="flex items-center gap-2 sm:gap-2.5 text-left group cursor-pointer shrink-0"
+              title="Ir para tela inicial"
             >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 border border-emerald-100 shadow-2xs group-hover:scale-105 transition-transform">
-                <Leaf className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-emerald-600/20" />
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
+                <img src="/logo.png" alt="NutriSmart Logo" className="w-full h-full object-cover rounded-full border-0" />
               </div>
-              <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap">
+              <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap transition-all duration-300 hover:brightness-110 group-hover:brightness-110">
                 Nutri<span className="text-emerald-500">Smart</span>
               </div>
             </button>
+
+            {/* 2. Botão Voltar (Seta) ➔ 3. Botão Início / Lobby (Home) */}
+            {activeRole === 'nutri' && currentView !== 'dashboard' && (
+              <div className="flex items-center gap-1 bg-slate-100/90 p-0.5 sm:p-1 rounded-2xl border border-slate-200/80 shadow-2xs shrink-0">
+                {/* 2. Botão Voltar */}
+                <button
+                  onClick={onBack || (() => onNavigate('dashboard'))}
+                  className="flex items-center gap-1 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/60 shadow-2xs transition active:scale-95 cursor-pointer group"
+                  title="Voltar à tela anterior"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-slate-600 group-hover:-translate-x-0.5 transition-transform" />
+                  <span className="hidden md:inline">Voltar</span>
+                </button>
+
+                {/* 3. Botão Início / Lobby (Oculto em telas grandes/desktop onde o menu de navegação superior já exibe o Lobby) */}
+                <button
+                  onClick={onGoLobby || (() => onNavigate('dashboard'))}
+                  className="flex lg:hidden items-center gap-1 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/60 shadow-2xs transition active:scale-95 cursor-pointer group"
+                  title="Ir para o Lobby Principal"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-105 transition-transform" />
+                  <span className="hidden md:inline">Lobby</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Action Controls & Badges */}
@@ -111,12 +144,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="hidden lg:flex items-center gap-1 bg-slate-100/70 backdrop-blur-md p-1 rounded-2xl border border-slate-200/70">
                 <button
                   onClick={() => onNavigate('dashboard')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
                     currentView === 'dashboard'
                       ? 'bg-white text-emerald-700 shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
+                  <LayoutDashboard className="w-3.5 h-3.5 text-emerald-600" />
                   Lobby
                 </button>
 
@@ -129,19 +163,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  Nova Ficha
+                  Ficha Clínica
                 </button>
 
                 <button
                   onClick={() => onNavigate('patients')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                    currentView === 'patients'
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 relative ${
+                    currentView === 'patients' || currentView === 'chat-hub' || currentView === 'chat-room'
                       ? 'bg-white text-sky-700 shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
                   <Users className="w-3.5 h-3.5 text-sky-600" />
                   Pacientes
+                  {activeUnread > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black animate-pulse">
+                      {activeUnread}
+                    </span>
+                  )}
                 </button>
 
                 <button
@@ -157,23 +196,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigate('chat-hub')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 relative ${
-                    currentView === 'chat-hub' || currentView === 'chat-room'
-                      ? 'bg-white text-emerald-700 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                  Chat
-                  {activeUnread > 0 && (
-                    <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black animate-pulse">
-                      {activeUnread}
-                    </span>
-                  )}
-                </button>
-
-                <button
                   onClick={() => onNavigate('kitchen')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
                     currentView === 'kitchen'
@@ -183,6 +205,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <UtensilsCrossed className="w-3.5 h-3.5 text-amber-600" />
                   Receitas
+                </button>
+
+                <button
+                  onClick={() => onNavigate('calculator')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    currentView === 'calculator'
+                      ? 'bg-white text-teal-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Calculator className="w-3.5 h-3.5 text-teal-600" />
+                  Calculadora
                 </button>
               </div>
             )}

@@ -1,17 +1,55 @@
+export interface PatientPhoto {
+  id: string;
+  label: 'Frente' | 'Costas' | 'Perfil Direito' | 'Perfil Esquerdo' | 'Livre' | string;
+  dataUrl: string;
+  date: string;
+}
+
 export interface PatientFormData {
   nome: string;
   idade: string;
+  sexo?: 'M' | 'F' | string;
   telefone: string;
   email: string;
+  senha?: string;
   peso: string;
   altura: string;
-  braco: string;
-  peito: string;
+  // Medidas Legadas / Unilaterais (compatibilidade)
+  braco?: string;
+  peito?: string;
   cintura: string;
   abdomen: string;
   quadril: string;
-  coxa: string;
-  panturrilha: string;
+  coxa?: string;
+  panturrilha?: string;
+  // Circunferências Corporais Bilaterais Detalhadas (cm)
+  bracoDireitoRelaxado?: string;
+  bracoEsquerdoRelaxado?: string;
+  bracoDireitoContraido?: string;
+  bracoEsquerdoContraido?: string;
+  ombros?: string;
+  peitoral?: string;
+  coxaDireita?: string;
+  coxaEsquerda?: string;
+  panturrilhaDireita?: string;
+  panturrilhaEsquerda?: string;
+  // Protocolo de 9 Pregas Cutâneas (mm)
+  dobraTriceps?: string;
+  dobraSubescapular?: string;
+  dobraAxilarMedia?: string;
+  dobraPeitoral?: string;
+  dobraSuprailiaca?: string;
+  dobraAbdominal?: string;
+  dobraCoxa?: string;
+  dobraPanturrilha?: string;
+  dobraBiceps?: string;
+  // Composição Corporal Estimada (Jackson & Pollock + Equação de Siri)
+  densidadeCorporal?: string;
+  percentualGordura?: string;
+  classificacaoGordura?: string;
+  // Galeria de Fotos Evolutivas
+  fotos?: PatientPhoto[];
+  // Campos Clínicos
   objetivo: string;
   restricoes: string;
   sintomas: string;
@@ -39,6 +77,7 @@ export interface ReportRecord {
   aiData?: AiNutritionPlan | null;
   aiMealPlan?: string;
   fichaNumber?: number;
+  pinned?: boolean;
 }
 
 export interface ChatMessage {
@@ -48,13 +87,16 @@ export interface ChatMessage {
   text: string;
   imageUrl?: string | null;
   timestamp: string;
+  read?: boolean;
 }
 
 export type AppointmentCategory =
-  | 'Consulta Qualisan'
+  | 'Santa Casa'
   | 'Visita Particular'
   | 'Lazer / Pessoal'
-  | 'Compromisso Diverso';
+  | 'Compromisso Diverso'
+  | 'Outro / Personalizado'
+  | string;
 
 export interface Appointment {
   id: string;
@@ -85,7 +127,8 @@ export type AppView =
   | 'kitchen'
   | 'chat-hub'
   | 'chat-room'
-  | 'patient-portal';
+  | 'patient-portal'
+  | 'calculator';
 
 export interface PatientGroup {
   code: string;

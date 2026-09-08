@@ -31,10 +31,26 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 2): P
 }
 
 export async function requestMealPlanAI(formData: PatientFormData): Promise<AiNutritionPlan> {
+  // Context compression: send only strictly necessary clinical fields
+  const compactPayload = {
+    nome: formData.nome?.trim(),
+    idade: formData.idade?.trim(),
+    peso: formData.peso?.trim(),
+    altura: formData.altura?.trim(),
+    objetivo: formData.objetivo?.trim(),
+    exercicio: formData.exercicio?.trim(),
+    restricoes: formData.restricoes?.trim(),
+    sintomas: formData.sintomas?.trim(),
+    tipoDieta: formData.tipoDieta?.trim(),
+    calorias: formData.calorias?.trim(),
+    observacoes: formData.observacoes?.trim(),
+    instrucoesIA: formData.instrucoesIA?.trim(),
+  };
+
   const data = await fetchWithRetry('/api/ai/meal-plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(formData),
+    body: JSON.stringify(compactPayload),
   });
   return data;
 }
@@ -49,10 +65,10 @@ export async function requestRefinePlanAI(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      objetivo,
-      restricoes,
+      objetivo: objetivo?.trim(),
+      restricoes: restricoes?.trim(),
       currentPlan,
-      instruction,
+      instruction: instruction?.trim(),
     }),
   });
   return data;
@@ -68,9 +84,9 @@ export async function requestRecipesAI(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      prompt,
-      objetivo,
-      restricoes,
+      prompt: prompt?.trim(),
+      objetivo: objetivo?.trim(),
+      restricoes: restricoes?.trim(),
       count,
     }),
   });
@@ -83,14 +99,15 @@ export async function requestChatSuggestionAI(
   objetivo?: string,
   lastMealPlanSummary?: string
 ): Promise<string> {
+  // Truncate and compress context for faster generation and lower token overhead
   const data = await fetchWithRetry('/api/ai/chat-suggest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      lastPatientMessage,
-      patientName,
-      objetivo,
-      lastMealPlanSummary,
+      lastPatientMessage: (lastPatientMessage || '').trim().slice(-300),
+      patientName: (patientName || '').trim(),
+      objetivo: (objetivo || '').trim(),
+      lastMealPlanSummary: (lastMealPlanSummary || '').trim().slice(0, 150),
     }),
   });
   return data.suggestion || 'Olá! Como posso ajudar você hoje? ✨';

@@ -122,13 +122,25 @@ export function compressImageForUpload(file: File): Promise<string> {
   });
 }
 
-export function exportBackupJSON(reports: any[], agenda: any[], chatMessages: any[]) {
+export function exportBackupJSON(
+  reports: any[],
+  agenda: any[],
+  chatMessages: any[],
+  recipes?: any[],
+  calculatorState?: any,
+  pinnedPatients?: string[]
+) {
   const data = {
-    version: '1.00',
+    version: '1.10',
     exportedAt: new Date().toISOString(),
     reports,
     agenda,
+    appointments: agenda,
     chatMessages,
+    allMessages: chatMessages,
+    recipes: recipes || [],
+    calculatorState: calculatorState || null,
+    pinnedPatients: pinnedPatients || [],
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

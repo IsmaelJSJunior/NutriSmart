@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Download, Upload, X, ShieldCheck, Database, HardDriveDownload, HardDriveUpload } from 'lucide-react';
+import { Settings, Download, Upload, X, ShieldCheck, HardDriveDownload, HardDriveUpload } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen?: boolean;
@@ -15,11 +15,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onImportBackup,
 }) => {
   const [isClosing, setIsClosing] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => setIsMounted(true), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  // Escape key listener
+  useEffect(() => {
     if (!isOpen) return;
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -30,7 +37,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.body.style.overflow = originalOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
@@ -39,29 +45,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsClosing(true);
     setTimeout(() => {
       setIsClosing(false);
+      setIsMounted(false);
       onClose();
     }, 220);
   };
 
   if (isOpen === false) return null;
 
+  const isVisible = isMounted && !isClosing;
+
   return (
     <div
       onClick={handleClose}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all duration-200 ease-out select-none ${
-        isClosing ? 'opacity-0' : 'opacity-100'
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md transition-all duration-300 ease-out select-none ${
+        isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 relative transition-all duration-200 ease-out transform ${
-          isClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+        className={`bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 relative transition-all duration-300 ease-out transform ${
+          isVisible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-3'
         }`}
       >
         <button
           onClick={handleClose}
           type="button"
-          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 active:scale-95"
+          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 active:scale-95 cursor-pointer"
           title="Fechar"
         >
           <X className="w-5 h-5" />
@@ -82,7 +91,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <p className="text-xs text-slate-500 mb-5 leading-relaxed">
-          Exporte uma cópia de segurança segura ou restaure dados consolidados (prontuários, agenda e conversas).
+          Exporte uma cópia de segurança segura ou restaure dados consolidados (prontuários, antropometria, fotos, agenda, receitas e conversas).
         </p>
 
         <div className="space-y-3">
@@ -91,7 +100,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               handleClose();
               setTimeout(onExportBackup, 230);
             }}
-            className="w-full p-3.5 rounded-2xl bg-slate-50 hover:bg-emerald-50/70 border border-slate-200 hover:border-emerald-200 flex items-center justify-between group transition text-left"
+            className="w-full p-3.5 rounded-2xl bg-slate-50 hover:bg-emerald-50/70 border border-slate-200 hover:border-emerald-200 flex items-center justify-between group transition text-left cursor-pointer active:scale-98"
           >
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -114,7 +123,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               handleClose();
               setTimeout(onImportBackup, 230);
             }}
-            className="w-full p-3.5 rounded-2xl bg-slate-50 hover:bg-sky-50/70 border border-slate-200 hover:border-sky-200 flex items-center justify-between group transition text-left"
+            className="w-full p-3.5 rounded-2xl bg-slate-50 hover:bg-sky-50/70 border border-slate-200 hover:border-sky-200 flex items-center justify-between group transition text-left cursor-pointer active:scale-98"
           >
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-sky-100/80 text-sky-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -141,3 +150,4 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </div>
   );
 };
+
