@@ -24,7 +24,8 @@ import { calculateIMC } from '../lib/utils';
 import { PatientFullReportModal } from './PatientFullReportModal';
 import { HistoryDropdown } from './HistoryDropdown';
 import { CustomDatePicker } from './CustomDatePicker';
-import { getPinnedPatientCodes, togglePinnedPatientCode } from '../services/storage';
+import { togglePinnedPatientCode } from '../services/storage';
+import { usePinnedPatientCodes } from '../hooks/useFirestoreData';
 
 export interface NutriDashboardProps {
   reports: ReportRecord[];
@@ -122,15 +123,14 @@ export const NutriDashboard: React.FC<NutriDashboardProps> = ({
   const [selectedModalReport, setSelectedModalReport] = useState<ReportRecord | null>(null);
   const [selectedReportIdByPatient, setSelectedReportIdByPatient] = useState<Record<string, string>>({});
 
-  // Pinned patients & Sorting for Prontuários widget
-  const [pinnedCodes, setPinnedCodes] = useState<string[]>(() => getPinnedPatientCodes());
+  // Pinned patients & Sorting for Prontuários widget (Real-time cloud sync across devices)
+  const pinnedCodes = usePinnedPatientCodes();
   const [sortOption, setSortOption] = useState<'recent' | 'alpha' | 'oldest' | 'priority'>('recent');
   const [isSortOpen, setIsSortOpen] = useState(false);
 
-  const togglePin = (code: string, e: React.MouseEvent) => {
+  const togglePin = async (code: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = togglePinnedPatientCode(code);
-    setPinnedCodes([...updated]);
+    await togglePinnedPatientCode(code);
   };
 
   const SORT_OPTIONS: { id: 'recent' | 'alpha' | 'oldest' | 'priority'; label: string }[] = [

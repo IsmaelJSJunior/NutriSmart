@@ -58,6 +58,7 @@ const COLLECTIONS = {
   MESSAGES: 'messages',
   RECIPES: 'recipes',
   CALCULATOR: 'calculator',
+  SETTINGS: 'settings',
 } as const;
 
 export type SyncStatus = 'synced' | 'connecting' | 'offline';
@@ -101,19 +102,22 @@ function sanitizeForFirestore<T>(data: T): T {
 }
 
 // ==========================================
-// PINNED PATIENTS HELPERS
+// PINNED PATIENTS HELPERS (SSoT via DataStore & Cloud Firestore)
 // ==========================================
 export function getPinnedPatientCodes(): string[] {
-  return getLocalData<string[]>(STORAGE_KEYS.PINNED_PATIENTS, []);
+  return dataStore ? dataStore.getPinnedPatientCodes() : getLocalData<string[]>(STORAGE_KEYS.PINNED_PATIENTS, []);
 }
 
-export function togglePinnedPatientCode(code: string): string[] {
-  const current = getPinnedPatientCodes();
+export function togglePinnedPatientCode(code: string): Promise<string[]> {
+  if (dataStore) {
+    return dataStore.togglePinnedPatientCode(code);
+  }
+  const current = getLocalData<string[]>(STORAGE_KEYS.PINNED_PATIENTS, []);
   const normalized = code.trim().toUpperCase();
   const exists = current.includes(normalized);
   const updated = exists ? current.filter((c) => c !== normalized) : [...current, normalized];
   setLocalData(STORAGE_KEYS.PINNED_PATIENTS, updated);
-  return updated;
+  return Promise.resolve(updated);
 }
 
 // ==========================================
@@ -157,12 +161,14 @@ export class DataStore {
   private recipes: RecipeItem[] = [];
   private calculatorState: any = null;
   private syncLogs: SyncLogEntry[] = [];
+  private pinnedCodes: string[] = [];
 
   private reportsListeners: Set<(data: ReportRecord[]) => void> = new Set();
   private messagesListeners: Set<(data: ChatMessage[]) => void> = new Set();
   private agendaListeners: Set<(data: Appointment[]) => void> = new Set();
   private recipesListeners: Set<(data: RecipeItem[]) => void> = new Set();
   private calculatorListeners: Set<(data: any) => void> = new Set();
+  private pinnedListeners: Set<(codes: string[]) => void> = new Set();
   private statusListeners: Set<(status: SyncStatus) => void> = new Set();
   private syncingListeners: Set<(isSyncing: boolean) => void> = new Set();
   private syncLogsListeners: Set<(logs: SyncLogEntry[]) => void> = new Set();
@@ -179,6 +185,7 @@ export class DataStore {
     this.agenda = getLocalData<Appointment[]>(STORAGE_KEYS.AGENDA, []).filter((a) => !isMockItem(a.id));
     this.recipes = getLocalData<RecipeItem[]>(STORAGE_KEYS.RECIPES, []);
     this.calculatorState = getLocalData<any>(STORAGE_KEYS.CALCULATOR, null);
+    this.pinnedCodes = getLocalData<string[]>(STORAGE_KEYS.PINNED_PATIENTS, []);
     this.syncLogs = getLocalData<SyncLogEntry[]>(STORAGE_KEYS.SYNC_LOGS, DEFAULT_SYNC_LOGS).filter(
       (l) => !l.description.includes('Ana Silva') && !l.description.includes('Qualisan')
     );
@@ -186,6 +193,7 @@ export class DataStore {
     setLocalData(STORAGE_KEYS.REPORTS, this.reports);
     setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
     setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
+    setLocalData(STORAGE_KEYS.PINNED_PATIENTS, this.pinnedCodes);
     setLocalData(STORAGE_KEYS.SYNC_LOGS, this.syncLogs);
 
     // 2. Start Cloud-First Firestore real-time synchronization
@@ -418,6 +426,36 @@ export class DataStore {
           console.warn('NutriClinical Firestore calculator listener error:', error);
         }
       );
+
+      // 6. Prontuários Fixados em Tempo Real entre Dispositivos (Settings / Pinned Patients)
+      const pinnedDocRef = doc(db, COLLECTIONS.SETTINGS, 'pinned_patients');
+      onSnapshot(
+        pinnedDocRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (Array.isArray(data?.codes)) {
+              const remoteCodes = data.codes
+                .map((c: any) => String(c).trim().toUpperCase())
+                .filter(Boolean);
+
+              const isDifferent =
+                remoteCodes.length !== this.pinnedCodes.length ||
+                remoteCodes.some((c, i) => c !== this.pinnedCodes[i]);
+
+              if (isDifferent) {
+                this.pinnedCodes = remoteCodes;
+                setLocalData(STORAGE_KEYS.PINNED_PATIENTS, this.pinnedCodes);
+                this.pinnedListeners.forEach((fn) => fn(this.pinnedCodes));
+              }
+            }
+          }
+          this.setStatus('synced');
+        },
+        (error) => {
+          console.warn('NutriClinical Firestore pinned patients listener error:', error);
+        }
+      );
     } catch (e) {
       console.warn('NutriClinical: Erro fatal ao configurar listeners Firestore:', e);
       this.setStatus('offline');
@@ -457,6 +495,12 @@ export class DataStore {
     return () => this.calculatorListeners.delete(fn);
   }
 
+  public subscribePinnedPatients(fn: (codes: string[]) => void): () => void {
+    this.pinnedListeners.add(fn);
+    fn(this.pinnedCodes);
+    return () => this.pinnedListeners.delete(fn);
+  }
+
   // Getters
   public getReports(): ReportRecord[] {
     return this.reports;
@@ -476,6 +520,10 @@ export class DataStore {
 
   public getCalculatorState(): any {
     return this.calculatorState;
+  }
+
+  public getPinnedPatientCodes(): string[] {
+    return [...this.pinnedCodes];
   }
 
   // ==========================================
@@ -879,7 +927,88 @@ export class DataStore {
     }
   }
 
-  // 10. Testar Conexão em Tempo Real com Firestore
+  // 10. Alternar Fixação de Prontuário no Topo em Tempo Real (Multi-dispositivo)
+  public async togglePinnedPatientCode(code: string): Promise<string[]> {
+    const normalized = code.trim().toUpperCase();
+    if (!normalized) return [...this.pinnedCodes];
+
+    const exists = this.pinnedCodes.includes(normalized);
+    const updated = exists
+      ? this.pinnedCodes.filter((c) => c !== normalized)
+      : [...this.pinnedCodes, normalized];
+
+    // Atualização otimista imediata na memória e no cache local
+    this.pinnedCodes = updated;
+    setLocalData(STORAGE_KEYS.PINNED_PATIENTS, updated);
+    this.pinnedListeners.forEach((fn) => fn(this.pinnedCodes));
+
+    this.addSyncLog({
+      action: exists ? 'Prontuário desafixado' : 'Prontuário fixado no topo',
+      description: `Código ${normalized} (Sincronizado na nuvem)`,
+      status: 'success',
+      type: 'system',
+    });
+
+    // Gravação na nuvem Firestore em tempo real
+    if (db) {
+      this.setSyncing(true);
+      try {
+        const pinnedDocRef = doc(db, COLLECTIONS.SETTINGS, 'pinned_patients');
+        const payload = sanitizeForFirestore({
+          id: 'pinned_patients',
+          codes: updated,
+          updatedAt: serverTimestamp(),
+          clientUpdatedAt: new Date().toISOString(),
+        });
+        await setDoc(pinnedDocRef, payload, { merge: true });
+        this.setStatus('synced');
+      } catch (err) {
+        console.warn('Falha ao sincronizar prontuários fixados no Firestore:', err);
+        this.addSyncLog({
+          action: 'Falha ao sincronizar fixação',
+          description: `Código ${normalized}`,
+          status: 'error',
+          type: 'system',
+        });
+      } finally {
+        this.setSyncing(false);
+      }
+    }
+
+    return updated;
+  }
+
+  // 11. Salvar Lista Completa de Prontuários Fixados
+  public async savePinnedPatientCodes(codes: string[]): Promise<void> {
+    const normalizedList = Array.from(
+      new Set(codes.map((c) => String(c).trim().toUpperCase()).filter(Boolean))
+    );
+
+    this.pinnedCodes = normalizedList;
+    setLocalData(STORAGE_KEYS.PINNED_PATIENTS, normalizedList);
+    this.pinnedListeners.forEach((fn) => fn(this.pinnedCodes));
+
+    if (db) {
+      this.setSyncing(true);
+      try {
+        const pinnedDocRef = doc(db, COLLECTIONS.SETTINGS, 'pinned_patients');
+        const payload = sanitizeForFirestore({
+          id: 'pinned_patients',
+          codes: normalizedList,
+          updatedAt: serverTimestamp(),
+          clientUpdatedAt: new Date().toISOString(),
+        });
+        await setDoc(pinnedDocRef, payload, { merge: true });
+        this.setStatus('synced');
+      } catch (err) {
+        console.warn('Falha ao gravar lista de prontuários fixados no Firestore:', err);
+      } finally {
+        this.setSyncing(false);
+      }
+    }
+  }
+
+  // 12. Testar Conexão em Tempo Real com Firestore
   public async testConnection(): Promise<{ success: boolean; latencyMs: number; message: string }> {
     const startTime = Date.now();
     this.setSyncing(true);
@@ -990,7 +1119,7 @@ export class DataStore {
       }
 
       if (Array.isArray(data.pinnedPatients)) {
-        setLocalData(STORAGE_KEYS.PINNED_PATIENTS, data.pinnedPatients);
+        await this.savePinnedPatientCodes(data.pinnedPatients);
       }
 
       return { success: true, count: totalImported };
@@ -1013,6 +1142,9 @@ export class DataStore {
       for (const a of data.agenda) {
         await this.saveAppointment(a);
       }
+    }
+    if (data.pinnedPatients && Array.isArray(data.pinnedPatients)) {
+      await this.savePinnedPatientCodes(data.pinnedPatients);
     }
   }
 

@@ -31,6 +31,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Coleção de Configurações e Prontuários Fixados Multi-dispositivo
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
     // Fallback de desenvolvimento e produção multi-dispositivo
     match /{document=**} {
       allow read, write: if true;

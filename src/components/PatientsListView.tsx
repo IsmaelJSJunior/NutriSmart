@@ -21,12 +21,15 @@ import {
   Camera,
   Calendar,
   Sparkles,
+  Pin,
 } from 'lucide-react';
 import { ReportRecord, ChatMessage } from '../types';
 import { SimpleLineChart } from './SimpleLineChart';
 import { calculateIMC } from '../lib/utils';
 import { HistoryDropdown } from './HistoryDropdown';
 import { CustomSelect, SelectOption } from './CustomSelect';
+import { togglePinnedPatientCode } from '../services/storage';
+import { usePinnedPatientCodes } from '../hooks/useFirestoreData';
 
 interface PatientsListViewProps {
   reports: ReportRecord[];
@@ -58,6 +61,13 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
   const [sortBy, setSortBy] = useState<string>('unread');
   const [selectedConsultationMap, setSelectedConsultationMap] = useState<Record<string, string>>({});
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Prontuários Fixados sincronizados em tempo real entre dispositivos
+  const pinnedCodes = usePinnedPatientCodes();
+  const togglePin = async (code: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await togglePinnedPatientCode(code);
+  };
 
   // Compute unread count for a given patient
   const getUnreadForPatient = (code: string) => {
@@ -136,8 +146,13 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
       });
     });
 
-    // Smart Sorting
+    // Smart Sorting (Prontuários fixados sempre priorizados no topo)
     list.sort((a, b) => {
+      const isPinnedA = pinnedCodes.includes(a.code.toUpperCase());
+      const isPinnedB = pinnedCodes.includes(b.code.toUpperCase());
+      if (isPinnedA && !isPinnedB) return -1;
+      if (!isPinnedA && isPinnedB) return 1;
+
       if (sortBy === 'unread') {
         if (a.unreadCount !== b.unreadCount) {
           return b.unreadCount - a.unreadCount;
@@ -155,7 +170,7 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
     });
 
     return list;
-  }, [groupedPatients, messages, sortBy]);
+  }, [groupedPatients, messages, sortBy, pinnedCodes]);
 
   const handleCopyCredentials = (code: string, senha?: string, name?: string) => {
     const text = `NutriClinical - Credenciais de Acesso do Paciente:\nPaciente: ${name || ''}\nCódigo: ${code}\nSenha: ${senha || 'Não cadastrada'}\nAcesse o portal e acompanhe sua evolução!`;
@@ -262,6 +277,7 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
             const isExpanded = expandedCode === p.code;
             const weightDiff = p.latestWeight - p.initialWeight;
             const isDecreasing = weightDiff < 0;
+            const isPinned = pinnedCodes.includes(p.code.toUpperCase());
 
             // Determine active consultation for this patient
             const selectedReportId = selectedConsultationMap[p.code];
@@ -311,6 +327,12 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
                         <h3 className="font-black text-slate-900 text-sm sm:text-base tracking-tight truncate">
                           {p.name}
                         </h3>
+                        {isPinned && (
+                          <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold px-1.5 py-0.2 rounded-md flex items-center gap-0.5 shadow-2xs">
+                            <Pin className="w-2.5 h-2.5 fill-amber-700 rotate-45" />
+                            Fixado
+                          </span>
+                        )}
                         {p.unreadCount > 0 && (
                           <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse flex items-center gap-0.5 shadow-2xs">
                             <MessageSquare className="w-2.5 h-2.5" />
@@ -364,6 +386,24 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
 
                     {/* Quick Action Buttons */}
                     <div className="flex items-center gap-1.5">
+                      {/* Botão de Fixar / Desafixar no Topo com Sincronização em Tempo Real */}
+                      <button
+                        type="button"
+                        onClick={(e) => togglePin(p.code, e)}
+                        className={`p-1.5 rounded-xl border transition-all cursor-pointer active:scale-90 ${
+                          isPinned
+                            ? 'bg-amber-100 text-amber-700 border-amber-300 shadow-2xs'
+                            : 'bg-slate-50 text-slate-400 hover:text-amber-600 hover:bg-amber-50 border-slate-200'
+                        }`}
+                        title={
+                          isPinned
+                            ? 'Prontuário fixado no topo (clique para desafixar)'
+                            : 'Fixar prontuário no topo (sincronizado em nuvem)'
+                        }
+                      >
+                        <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-amber-600 rotate-45' : ''}`} />
+                      </button>
+
                       {onOpenChat && (
                         <button
                           type="button"

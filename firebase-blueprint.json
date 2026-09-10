@@ -83,6 +83,17 @@
         "meals": { "type": "array" },
         "updatedAt": { "type": "string" }
       }
+    },
+    "SettingRecord": {
+      "type": "object",
+      "properties": {
+        "codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["codes"]
     }
   },
   "firestore": {
@@ -109,6 +120,10 @@
     "/calculator/{docId}": {
       "schema": { "$ref": "#/entities/CalculatorSession" },
       "description": "Estado e sessões da calculadora nutricional"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SettingRecord" },
+      "description": "Configurações globais e prontuários fixados sincronizados entre dispositivos"
     }
   }
 }

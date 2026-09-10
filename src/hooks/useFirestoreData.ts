@@ -158,3 +158,19 @@ export function useSyncLogs() {
   return logs;
 }
 
+/**
+ * Hook reativo para Prontuários Fixados em tempo real entre dispositivos (onSnapshot Firestore).
+ */
+export function usePinnedPatientCodes(): string[] {
+  const [pinnedCodes, setPinnedCodes] = useState<string[]>(() => dataStore.getPinnedPatientCodes());
+
+  useEffect(() => {
+    const unsub = dataStore.subscribePinnedPatients((codes) => {
+      setPinnedCodes(codes);
+    });
+    return () => unsub();
+  }, []);
+
+  return pinnedCodes;
+}
+
