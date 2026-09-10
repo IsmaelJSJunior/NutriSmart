@@ -36,6 +36,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Coleção de Ingestão Hídrica Diária
+    match /water_intake/{intakeId} {
+      allow read, write: if true;
+    }
+
     // Fallback de desenvolvimento e produção multi-dispositivo
     match /{document=**} {
       allow read, write: if true;

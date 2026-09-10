@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { dataStore, SyncStatus, STORAGE_KEYS } from '../services/storage';
-import { ReportRecord, ChatMessage, Appointment, RecipeItem } from '../types';
+import { ReportRecord, ChatMessage, Appointment, RecipeItem, WaterIntakeRecord } from '../types';
 
 /**
  * Hook para monitorar o status de conexão da nuvem e gravação ativa em tempo real.
@@ -172,5 +172,29 @@ export function usePinnedPatientCodes(): string[] {
   }, []);
 
   return pinnedCodes;
+}
+
+/**
+ * Hook reativo para Ingestão Hídrica Diária do Paciente em tempo real.
+ */
+export function useWaterIntake(patientCode: string, date: string) {
+  const [intake, setIntake] = useState<WaterIntakeRecord | null>(() =>
+    dataStore.getWaterIntake(patientCode, date)
+  );
+
+  useEffect(() => {
+    if (!patientCode) return;
+    const unsub = dataStore.subscribeWaterIntake((records) => {
+      const key = `${patientCode.toUpperCase()}_${date}`;
+      setIntake(records[key] || null);
+    });
+    return () => unsub();
+  }, [patientCode, date]);
+
+  const save = async (record: WaterIntakeRecord) => {
+    await dataStore.saveWaterIntake(record);
+  };
+
+  return { intake, saveWaterIntake: save };
 }
 

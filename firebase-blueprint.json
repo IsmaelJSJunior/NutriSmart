@@ -94,6 +94,19 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["codes"]
+    },
+    "WaterIntakeRecord": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientCode": { "type": "string" },
+        "date": { "type": "string" },
+        "currentMl": { "type": "number" },
+        "goalMl": { "type": "number" },
+        "cupSizeMl": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["patientCode", "date", "currentMl", "goalMl"]
     }
   },
   "firestore": {
@@ -124,6 +137,10 @@
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/SettingRecord" },
       "description": "Configurações globais e prontuários fixados sincronizados entre dispositivos"
+    },
+    "/water_intake/{intakeId}": {
+      "schema": { "$ref": "#/entities/WaterIntakeRecord" },
+      "description": "Progresso e metas de ingestão hídrica diária do paciente"
     }
   }
 }

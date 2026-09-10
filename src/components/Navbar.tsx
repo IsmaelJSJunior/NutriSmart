@@ -59,8 +59,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-slate-100/90 shadow-2xs print:hidden h-11 sm:h-12 flex items-center w-full overflow-x-hidden">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 w-full flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 group cursor-default">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
-              <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full border-0" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-emerald-500/20 shadow-xs transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
+              <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full" />
             </div>
             <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap transition-all duration-300 hover:brightness-110 group-hover:brightness-110">
               Nutri<span className="text-emerald-500">Clinical</span>
@@ -105,8 +105,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2 sm:gap-2.5 text-left group cursor-pointer shrink-0"
               title="Ir para tela inicial"
             >
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
-                <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full border-0" />
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-emerald-500/20 shadow-xs transition-transform duration-300 hover:scale-105 group-hover:scale-105 group-hover:drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
+                <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full" />
               </div>
               <div className="font-extrabold text-base sm:text-lg text-slate-800 tracking-tight whitespace-nowrap transition-all duration-300 hover:brightness-110 group-hover:brightness-110">
                 Nutri<span className="text-emerald-500">Clinical</span>

@@ -17,6 +17,7 @@ import { Appointment, AppointmentCategory } from '../types';
 import { dataStore } from '../services/storage';
 import { CustomDatePicker } from './CustomDatePicker';
 import { CustomHourPicker } from './CustomHourPicker';
+import { ConfirmModal } from './ConfirmModal';
 
 interface AgendaViewProps {
   agenda: Appointment[];
@@ -150,10 +151,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ agenda, onBack }) => {
     setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Deseja realmente remover este agendamento?')) {
-      await dataStore.deleteAppointment(id);
-    }
+  const [appointmentToDelete, setAppointmentToDelete] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => {
+    setAppointmentToDelete(id);
   };
 
   const getCategoryStyle = (typeStr: string) => {
@@ -485,6 +486,23 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ agenda, onBack }) => {
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={!!appointmentToDelete}
+        title="Excluir Agendamento"
+        message="Tem certeza de que deseja remover esta consulta da sua agenda? Esta ação não poderá ser desfeita."
+        confirmText="Sim, Excluir"
+        cancelText="Cancelar"
+        isDestructive={true}
+        icon="trash"
+        onConfirm={async () => {
+          if (appointmentToDelete) {
+            await dataStore.deleteAppointment(appointmentToDelete);
+            setAppointmentToDelete(null);
+          }
+        }}
+        onClose={() => setAppointmentToDelete(null)}
+      />
     </div>
   );
 };

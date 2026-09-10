@@ -18,14 +18,16 @@ import {
   Calculator,
   Pin,
   ArrowUpDown,
+  Trash2,
 } from 'lucide-react';
 import { Appointment, ReportRecord, ChatMessage } from '../types';
 import { calculateIMC } from '../lib/utils';
 import { PatientFullReportModal } from './PatientFullReportModal';
 import { HistoryDropdown } from './HistoryDropdown';
 import { CustomDatePicker } from './CustomDatePicker';
-import { togglePinnedPatientCode } from '../services/storage';
-import { usePinnedPatientCodes } from '../hooks/useFirestoreData';
+import { ConfirmModal } from './ConfirmModal';
+import { togglePinnedPatientCode, dataStore } from '../services/storage';
+import { usePinnedPatientCodes, useRecipes } from '../hooks/useFirestoreData';
 
 export interface NutriDashboardProps {
   reports: ReportRecord[];
@@ -39,6 +41,7 @@ export interface NutriDashboardProps {
   onViewChat: () => void;
   onViewCalculator?: () => void;
   onSelectReport: (report: ReportRecord) => void;
+  onDeleteReport?: (reportId: string) => void | Promise<void>;
   onExportBackup?: () => void;
   onImportBackup?: () => void;
   onNavigateToChat?: (patientCode: string) => void;
@@ -118,10 +121,15 @@ export const NutriDashboard: React.FC<NutriDashboardProps> = ({
   onViewChat,
   onViewCalculator,
   onSelectReport,
+  onDeleteReport,
+  onExportBackup,
+  onImportBackup,
   onNavigateToChat,
 }) => {
+  const { recipes } = useRecipes();
   const [selectedModalReport, setSelectedModalReport] = useState<ReportRecord | null>(null);
   const [selectedReportIdByPatient, setSelectedReportIdByPatient] = useState<Record<string, string>>({});
+  const [reportToDelete, setReportToDelete] = useState<string | null>(null);
 
   // Pinned patients & Sorting for Prontuários widget (Real-time cloud sync across devices)
   const pinnedCodes = usePinnedPatientCodes();
@@ -312,12 +320,12 @@ export const NutriDashboard: React.FC<NutriDashboardProps> = ({
               </div>
             </div>
             <div className="text-base sm:text-xl font-black tracking-tight leading-tight">
-              42+
+              {recipes.length}
             </div>
           </div>
           <div className="mt-0.5 flex items-center justify-between">
             <span className="text-[8px] sm:text-[10px] bg-white/20 hover:bg-white/30 px-1.5 py-0.2 rounded font-bold truncate">
-              Cozinha →
+              {recipes.length === 1 ? '1 salva' : `${recipes.length} salvas`} →
             </span>
           </div>
         </button>
@@ -526,12 +534,12 @@ export const NutriDashboard: React.FC<NutriDashboardProps> = ({
                     </div>
 
                     {/* Ação Direita + Pin + Seletor de Histórico Customizado (NutriClinical UI) */}
-                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-center">
-                      {/* Botão Discreto de Fixar (Pin) */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-center pl-3 sm:pl-0">
+                      {/* Botão Discreto de Fixar (Pin) com espaçamento harmônico no mobile */}
                       <button
                         type="button"
                         onClick={(e) => togglePin(patient.code, e)}
-                        className={`p-1.5 rounded-xl border transition-all cursor-pointer active:scale-90 ${
+                        className={`p-1.5 rounded-xl border transition-all cursor-pointer active:scale-90 ml-2 sm:ml-0 ${
                           isPinned
                             ? 'bg-amber-100 text-amber-700 border-amber-300 shadow-2xs'
                             : 'bg-transparent text-slate-300 hover:text-amber-500 hover:bg-slate-100 border-transparent hover:border-slate-200'
@@ -574,6 +582,16 @@ export const NutriDashboard: React.FC<NutriDashboardProps> = ({
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Ver Prontuário</span>
+                      </button>
+
+                      {/* Botão de Excluir Prontuário com Confirmação Segura */}
+                      <button
+                        type="button"
+                        onClick={() => setReportToDelete(activeReport.id)}
+                        className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer active:scale-90"
+                        title="Excluir este prontuário"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -692,6 +710,28 @@ export const NutriDashboard: React.FC<NutriDashboardProps> = ({
           onNavigateToChat={onNavigateToChat}
         />
       )}
+
+      {/* Modal de Confirmação Segura para Exclusão de Prontuário */}
+      <ConfirmModal
+        isOpen={!!reportToDelete}
+        title="Excluir Prontuário"
+        message="Tem certeza de que deseja excluir este prontuário clínico? Esta ação removerá o registro e não poderá ser desfeita."
+        confirmText="Sim, Excluir"
+        cancelText="Cancelar"
+        isDestructive={true}
+        icon="trash"
+        onConfirm={async () => {
+          if (reportToDelete) {
+            if (onDeleteReport) {
+              await onDeleteReport(reportToDelete);
+            } else {
+              await dataStore.deleteReport(reportToDelete);
+            }
+            setReportToDelete(null);
+          }
+        }}
+        onClose={() => setReportToDelete(null)}
+      />
     </div>
   );
 };

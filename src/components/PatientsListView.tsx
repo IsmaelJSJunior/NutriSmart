@@ -30,6 +30,7 @@ import { HistoryDropdown } from './HistoryDropdown';
 import { CustomSelect, SelectOption } from './CustomSelect';
 import { togglePinnedPatientCode } from '../services/storage';
 import { usePinnedPatientCodes } from '../hooks/useFirestoreData';
+import { ConfirmModal } from './ConfirmModal';
 
 interface PatientsListViewProps {
   reports: ReportRecord[];
@@ -58,6 +59,7 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
+  const [reportToDelete, setReportToDelete] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<string>('unread');
   const [selectedConsultationMap, setSelectedConsultationMap] = useState<Record<string, string>>({});
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -840,11 +842,7 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      if (confirm('Deseja realmente excluir este prontuário?')) {
-                                        onDeleteReport(report.id);
-                                      }
-                                    }}
+                                    onClick={() => setReportToDelete(report.id)}
                                     className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl transition cursor-pointer active:scale-95"
                                     title="Excluir este registro"
                                   >
@@ -863,6 +861,23 @@ export const PatientsListView: React.FC<PatientsListViewProps> = ({
           })
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={!!reportToDelete}
+        title="Excluir Prontuário"
+        message="Tem certeza de que deseja excluir este prontuário clínico? Esta ação removerá o registro e não poderá ser desfeita."
+        confirmText="Sim, Excluir"
+        cancelText="Cancelar"
+        isDestructive={true}
+        icon="trash"
+        onConfirm={() => {
+          if (reportToDelete) {
+            onDeleteReport(reportToDelete);
+            setReportToDelete(null);
+          }
+        }}
+        onClose={() => setReportToDelete(null)}
+      />
     </div>
   );
 };

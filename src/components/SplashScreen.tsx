@@ -70,11 +70,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       <div className="relative z-10 flex flex-col items-center max-w-sm w-full px-6 text-center">
         {/* Emblem Logo */}
         <div className="relative mb-6 flex items-center justify-center">
-          <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden flex items-center justify-center shrink-0 border-0 ring-0 shadow-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.06)] transition-transform duration-700 hover:scale-105">
+          <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-emerald-500/30 drop-shadow-[0_12px_24px_rgba(16,185,129,0.25)] transition-transform duration-700 hover:scale-105">
             <img
               src="/logo.png"
               alt="NutriClinical Logo"
-              className="w-full h-full object-cover rounded-full border-0"
+              className="w-full h-full object-cover rounded-full"
             />
           </div>
         </div>

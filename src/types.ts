@@ -152,3 +152,13 @@ export interface IMCResult {
   colorClass: string;
   numericValue: number;
 }
+
+export interface WaterIntakeRecord {
+  id: string; // `${patientCode}_${date}`
+  patientCode: string;
+  date: string; // YYYY-MM-DD
+  currentMl: number;
+  goalMl: number;
+  cupSizeMl: number;
+  updatedAt?: string;
+}

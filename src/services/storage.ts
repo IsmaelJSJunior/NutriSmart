@@ -9,7 +9,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { ReportRecord, ChatMessage, Appointment, RecipeItem } from '../types';
+import { ReportRecord, ChatMessage, Appointment, RecipeItem, WaterIntakeRecord } from '../types';
 
 // ==========================================
 // STORAGE KEYS & CACHE DEFINITIONS
@@ -23,6 +23,7 @@ export const STORAGE_KEYS = {
   PINNED_PATIENTS: 'nutriclinical_pinned_patients_v1',
   RECIPE_QUOTAS: 'nutriclinical_recipe_quotas_v1',
   SYNC_LOGS: 'nutriclinical_sync_logs_v1',
+  WATER_INTAKE: 'nutriclinical_water_intake_v1',
 } as const;
 
 export interface SyncLogEntry {
@@ -59,6 +60,7 @@ const COLLECTIONS = {
   RECIPES: 'recipes',
   CALCULATOR: 'calculator',
   SETTINGS: 'settings',
+  WATER_INTAKE: 'water_intake',
 } as const;
 
 export type SyncStatus = 'synced' | 'connecting' | 'offline';
@@ -162,6 +164,7 @@ export class DataStore {
   private calculatorState: any = null;
   private syncLogs: SyncLogEntry[] = [];
   private pinnedCodes: string[] = [];
+  private waterIntake: Record<string, WaterIntakeRecord> = {};
 
   private reportsListeners: Set<(data: ReportRecord[]) => void> = new Set();
   private messagesListeners: Set<(data: ChatMessage[]) => void> = new Set();
@@ -169,6 +172,7 @@ export class DataStore {
   private recipesListeners: Set<(data: RecipeItem[]) => void> = new Set();
   private calculatorListeners: Set<(data: any) => void> = new Set();
   private pinnedListeners: Set<(codes: string[]) => void> = new Set();
+  private waterIntakeListeners: Set<(data: Record<string, WaterIntakeRecord>) => void> = new Set();
   private statusListeners: Set<(status: SyncStatus) => void> = new Set();
   private syncingListeners: Set<(isSyncing: boolean) => void> = new Set();
   private syncLogsListeners: Set<(logs: SyncLogEntry[]) => void> = new Set();
@@ -186,6 +190,7 @@ export class DataStore {
     this.recipes = getLocalData<RecipeItem[]>(STORAGE_KEYS.RECIPES, []);
     this.calculatorState = getLocalData<any>(STORAGE_KEYS.CALCULATOR, null);
     this.pinnedCodes = getLocalData<string[]>(STORAGE_KEYS.PINNED_PATIENTS, []);
+    this.waterIntake = getLocalData<Record<string, WaterIntakeRecord>>(STORAGE_KEYS.WATER_INTAKE, {});
     this.syncLogs = getLocalData<SyncLogEntry[]>(STORAGE_KEYS.SYNC_LOGS, DEFAULT_SYNC_LOGS).filter(
       (l) => !l.description.includes('Ana Silva') && !l.description.includes('Qualisan')
     );
@@ -194,6 +199,7 @@ export class DataStore {
     setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
     setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
     setLocalData(STORAGE_KEYS.PINNED_PATIENTS, this.pinnedCodes);
+    setLocalData(STORAGE_KEYS.WATER_INTAKE, this.waterIntake);
     setLocalData(STORAGE_KEYS.SYNC_LOGS, this.syncLogs);
 
     // 2. Start Cloud-First Firestore real-time synchronization
@@ -456,6 +462,26 @@ export class DataStore {
           console.warn('NutriClinical Firestore pinned patients listener error:', error);
         }
       );
+
+      // 7. Registro de Ingestão Hídrica Diária em Tempo Real (Water Intake)
+      const waterRef = collection(db, COLLECTIONS.WATER_INTAKE);
+      onSnapshot(
+        waterRef,
+        (snapshot) => {
+          const map: Record<string, WaterIntakeRecord> = {};
+          snapshot.docs.forEach((d) => {
+            const data = d.data() as WaterIntakeRecord;
+            map[d.id] = { ...data, id: d.id };
+          });
+          this.waterIntake = { ...this.waterIntake, ...map };
+          setLocalData(STORAGE_KEYS.WATER_INTAKE, this.waterIntake);
+          this.waterIntakeListeners.forEach((fn) => fn(this.waterIntake));
+          this.setStatus('synced');
+        },
+        (error) => {
+          console.warn('NutriClinical Firestore waterIntake listener error:', error);
+        }
+      );
     } catch (e) {
       console.warn('NutriClinical: Erro fatal ao configurar listeners Firestore:', e);
       this.setStatus('offline');
@@ -501,6 +527,12 @@ export class DataStore {
     return () => this.pinnedListeners.delete(fn);
   }
 
+  public subscribeWaterIntake(fn: (data: Record<string, WaterIntakeRecord>) => void): () => void {
+    this.waterIntakeListeners.add(fn);
+    fn(this.waterIntake);
+    return () => this.waterIntakeListeners.delete(fn);
+  }
+
   // Getters
   public getReports(): ReportRecord[] {
     return this.reports;
@@ -524,6 +556,11 @@ export class DataStore {
 
   public getPinnedPatientCodes(): string[] {
     return [...this.pinnedCodes];
+  }
+
+  public getWaterIntake(patientCode: string, date: string): WaterIntakeRecord | null {
+    const key = `${patientCode.toUpperCase()}_${date}`;
+    return this.waterIntake[key] || null;
   }
 
   // ==========================================
@@ -1008,7 +1045,43 @@ export class DataStore {
     }
   }
 
-  // 12. Testar Conexão em Tempo Real com Firestore
+  // 12. Salvar Registro Diário de Ingestão Hídrica (Cloud + Local)
+  public async saveWaterIntake(record: WaterIntakeRecord): Promise<void> {
+    const docId = `${record.patientCode.toUpperCase()}_${record.date}`;
+    const itemWithId: WaterIntakeRecord = {
+      ...record,
+      id: docId,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.waterIntake[docId] = itemWithId;
+    setLocalData(STORAGE_KEYS.WATER_INTAKE, this.waterIntake);
+    this.waterIntakeListeners.forEach((fn) => fn(this.waterIntake));
+
+    if (db) {
+      try {
+        const docRef = doc(db, COLLECTIONS.WATER_INTAKE, docId);
+        await setDoc(
+          docRef,
+          {
+            ...itemWithId,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        this.addSyncLog({
+          action: 'Ingestão hídrica atualizada',
+          description: `${itemWithId.currentMl} ml de água registrados para ${itemWithId.patientCode}`,
+          status: 'success',
+          type: 'report',
+        });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `water_intake/${docId}`);
+      }
+    }
+  }
+
+  // 13. Testar Conexão em Tempo Real com Firestore
   public async testConnection(): Promise<{ success: boolean; latencyMs: number; message: string }> {
     const startTime = Date.now();
     this.setSyncing(true);
@@ -1162,3 +1235,11 @@ export class DataStore {
 }
 
 export const dataStore = new DataStore();
+
+export function getWaterIntake(patientCode: string, date: string): WaterIntakeRecord | null {
+  return dataStore.getWaterIntake(patientCode, date);
+}
+
+export async function saveWaterIntake(record: WaterIntakeRecord): Promise<void> {
+  return dataStore.saveWaterIntake(record);
+}

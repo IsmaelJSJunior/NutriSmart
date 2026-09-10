@@ -29,6 +29,7 @@ import { BlockCopyButton } from './BlockCopyButton';
 import { copyToClipboard, calculateIMC } from '../lib/utils';
 import { requestRefinePlanAI } from '../services/ai';
 import { dataStore } from '../services/storage';
+import { exportClinicalReportPDF } from '../services/pdfExport';
 
 interface ClinicalReportViewProps {
   report: ReportRecord;
@@ -168,6 +169,20 @@ _NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
     }
   };
 
+  const handleExportPDF = () => {
+    const currentReport: ReportRecord = {
+      ...report,
+      aiData: {
+        mealPlan: mealPlanText,
+        training: trainingText,
+        supplements: supplementsText,
+        deficiencias: deficienciasText,
+      },
+      aiMealPlan: mealPlanText,
+    };
+    exportClinicalReportPDF(currentReport);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-1.5 sm:pt-2 pb-10 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out">
       {/* Top Action Bar - Standardized Design System */}
@@ -229,11 +244,11 @@ _NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
           </button>
 
           <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition shadow-xs"
-            title="Imprimir prontuário em PDF limpo"
+            onClick={handleExportPDF}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition shadow-xs cursor-pointer active:scale-95"
+            title="Gerar e imprimir Prontuário Clínico Oficial em PDF (Padrão A4)"
           >
-            <Printer className="w-4 h-4" />
+            <Printer className="w-4 h-4 text-emerald-400" />
             <span>Imprimir / PDF</span>
           </button>
         </div>
@@ -244,8 +259,8 @@ _NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
         {/* Printable Official Header */}
         <div className="pb-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-black text-xl shadow-md print:bg-emerald-600">
-              NC
+            <div className="w-12 h-12 rounded-full overflow-hidden border border-emerald-500/30 shadow-md shrink-0">
+              <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -549,11 +564,14 @@ _NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
             <BlockCopyButton title="Plano Alimentar" content={mealPlanText} />
           </div>
 
+          <div className="hidden print:block text-slate-800 text-xs font-mono whitespace-pre-wrap break-words leading-relaxed p-4 bg-slate-50 rounded-2xl border border-slate-200">
+            {mealPlanText}
+          </div>
           <textarea
             rows={12}
             value={mealPlanText}
             onChange={(e) => setMealPlanText(e.target.value)}
-            className="w-full p-4 rounded-2xl bg-slate-50/70 border border-slate-200 text-slate-800 text-sm font-mono leading-relaxed focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-y"
+            className="w-full p-4 rounded-2xl bg-slate-50/70 border border-slate-200 text-slate-800 text-sm font-mono leading-relaxed focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-y print:hidden"
           />
         </div>
 
@@ -569,11 +587,14 @@ _NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
             <BlockCopyButton title="Recomendação de Treino" content={trainingText} />
           </div>
 
+          <div className="hidden print:block text-slate-800 text-xs font-mono whitespace-pre-wrap break-words leading-relaxed p-4 bg-slate-50 rounded-2xl border border-slate-200">
+            {trainingText}
+          </div>
           <textarea
             rows={4}
             value={trainingText}
             onChange={(e) => setTrainingText(e.target.value)}
-            className="w-full p-4 rounded-2xl bg-slate-50/70 border border-slate-200 text-slate-800 text-sm font-mono leading-relaxed focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-y"
+            className="w-full p-4 rounded-2xl bg-slate-50/70 border border-slate-200 text-slate-800 text-sm font-mono leading-relaxed focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-y print:hidden"
           />
         </div>
 
@@ -589,11 +610,14 @@ _NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
             <BlockCopyButton title="Suplementação Estratégica" content={supplementsText} />
           </div>
 
+          <div className="hidden print:block text-slate-800 text-xs font-mono whitespace-pre-wrap break-words leading-relaxed p-4 bg-slate-50 rounded-2xl border border-slate-200">
+            {supplementsText}
+          </div>
           <textarea
             rows={4}
             value={supplementsText}
             onChange={(e) => setSupplementsText(e.target.value)}
-            className="w-full p-4 rounded-2xl bg-slate-50/70 border border-slate-200 text-slate-800 text-sm font-mono leading-relaxed focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-y"
+            className="w-full p-4 rounded-2xl bg-slate-50/70 border border-slate-200 text-slate-800 text-sm font-mono leading-relaxed focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-y print:hidden"
           />
         </div>
 
@@ -610,11 +634,14 @@ _NutriClinical • Dra. Maria Eduarda (Nutrição Clínica & Funcional)_`;
           </div>
 
           <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80">
+            <div className="hidden print:block text-slate-800 text-xs font-mono whitespace-pre-wrap break-words leading-relaxed p-3 bg-white rounded-xl border border-amber-200">
+              {deficienciasText}
+            </div>
             <textarea
               rows={4}
               value={deficienciasText}
               onChange={(e) => setDeficienciasText(e.target.value)}
-              className="w-full p-3 rounded-xl bg-white border border-amber-200 text-slate-800 text-sm font-mono leading-relaxed focus:ring-2 focus:ring-amber-500 focus:outline-none resize-y"
+              className="w-full p-3 rounded-xl bg-white border border-amber-200 text-slate-800 text-sm font-mono leading-relaxed focus:ring-2 focus:ring-amber-500 focus:outline-none resize-y print:hidden"
             />
           </div>
         </div>

@@ -34,15 +34,18 @@ export const LandingView: React.FC<LandingViewProps> = ({
       {/* Brand Hero Header - Clear, Prominent & Highlighted */}
       <div className="relative z-10 text-center mb-3 sm:mb-5">
         <div className="flex justify-center mb-2 sm:mb-3">
-          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shrink-0 border-0 ring-0 shadow-none cursor-pointer transition-all duration-300 ease-out hover:scale-105 hover:drop-shadow-[0_10px_20px_rgba(16,185,129,0.25)]">
-            <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full border-0 transition-transform duration-300 ease-out" />
+          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden shrink-0 border border-emerald-500/20 shadow-md cursor-pointer transition-all duration-300 ease-out hover:scale-105 hover:drop-shadow-[0_10px_20px_rgba(16,185,129,0.25)]">
+            <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full transition-transform duration-300 ease-out" />
           </div>
         </div>
         <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-800 tracking-tight leading-tight flex items-center justify-center gap-0.5">
           <span>Nutri</span>
           <span className="text-emerald-600">Clinical</span>
         </h1>
-        <p className="mt-1.5 text-[10px] sm:text-xs md:text-sm lg:text-base text-slate-500 font-medium leading-relaxed whitespace-nowrap overflow-hidden text-ellipsis w-full max-w-2xl mx-auto px-2">
+        <p
+          className="mt-1.5 text-[11px] sm:text-xs md:text-sm lg:text-base text-slate-500 font-medium leading-relaxed w-full max-w-[92vw] sm:max-w-2xl mx-auto px-3 sm:px-4 text-center break-words"
+          style={{ fontSize: 'clamp(0.72rem, 2.3vw, 0.95rem)' }}
+        >
           Prescrição personalizada, cálculo antropométrico e acompanhamento clínico contínuo.
         </p>
       </div>

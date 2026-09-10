@@ -296,6 +296,10 @@ export default function App() {
               setActiveReport(report);
               handleNavigate('report-view');
             }}
+            onDeleteReport={async (id) => {
+              await dataStore.deleteReport(id);
+              showToast('Prontuário removido com sucesso.');
+            }}
             onExportBackup={handleExportBackup}
             onImportBackup={() => setShowImportBackup(true)}
           />

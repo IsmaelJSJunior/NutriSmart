@@ -18,6 +18,7 @@ import {
 import { ReportRecord } from '../types';
 import { copyToClipboard, calculateIMC } from '../lib/utils';
 import { BlockCopyButton } from './BlockCopyButton';
+import { exportClinicalReportPDF } from '../services/pdfExport';
 
 interface PatientFullReportModalProps {
   report: ReportRecord | null;
@@ -131,8 +132,8 @@ _NutriClinical • Dra. Maria Eduarda_`;
         {/* Header Bar - Fixed and Sticky at Top */}
         <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-black shrink-0">
-              <FileText className="w-5 h-5" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden border border-emerald-500/40 shrink-0 shadow-xs">
+              <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -180,11 +181,11 @@ _NutriClinical • Dra. Maria Eduarda_`;
             </button>
 
             <button
-              onClick={() => window.print()}
+              onClick={() => report && exportClinicalReportPDF(report)}
               className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer active:scale-95"
-              title="Imprimir"
+              title="Gerar e imprimir Prontuário em PDF Oficial (Padrão A4)"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4 text-emerald-400" />
             </button>
 
             <button

@@ -78,8 +78,15 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
         r.formData.nome.trim().toLowerCase() === query.toLowerCase()
     );
 
-    if (found && found.formData.senha && found.formData.senha.trim() !== password.trim()) {
-      setError('Senha incorreta para este paciente. Por favor, verifique.');
+    // Strict validation: must exist in reports and match password
+    const passwordMatch =
+      found &&
+      (!found.formData.senha || found.formData.senha.trim() === password.trim());
+
+    if (!found || !passwordMatch) {
+      setError(
+        'Credenciais incorretas. Por favor, revise os dados informados ou entre em contato com sua nutricionista (Dra. Maria Eduarda).'
+      );
       return;
     }
 
@@ -87,16 +94,9 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
     setTimeout(() => {
       setIsClosing(false);
       setIsMounted(false);
-      if (found) {
-        setError(null);
-        onSuccess(found.patientCode, found.formData.nome);
-        onClose();
-      } else {
-        const normalizedCode = query.length <= 6 ? query.toUpperCase() : `P${query.slice(0, 3).toUpperCase()}1`;
-        setError(null);
-        onSuccess(normalizedCode, query);
-        onClose();
-      }
+      setError(null);
+      onSuccess(found.patientCode, found.formData.nome);
+      onClose();
     }, 200);
   };
 
@@ -125,8 +125,8 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
         </button>
 
         <div className="flex items-center gap-3.5 mb-2">
-          <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border-0 ring-0 shadow-none">
-            <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full border-0" />
+          <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-emerald-500/30 shadow-xs">
+            <img src="/logo.png" alt="NutriClinical Logo" className="w-full h-full object-cover rounded-full" />
           </div>
           <div>
             <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">
@@ -147,12 +147,19 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
               <input
                 type="text"
                 value={patientIdentifier}
-                onChange={(e) => setPatientIdentifier(e.target.value)}
+                onChange={(e) => {
+                  setPatientIdentifier(e.target.value);
+                  if (error) setError(null);
+                }}
                 placeholder="Ex: Nome do Paciente ou Código (ex: PAC1)"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition pr-10"
+                className={`w-full px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none transition pr-10 ${
+                  error
+                    ? 'bg-rose-50/40 border border-rose-300 ring-2 ring-rose-200/70 focus:ring-rose-300'
+                    : 'bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-sky-500 focus:bg-white'
+                }`}
                 autoFocus
               />
-              <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
+              <User className={`w-4 h-4 absolute right-3.5 top-3.5 ${error ? 'text-rose-400' : 'text-slate-400'}`} />
             </div>
           </div>
 
@@ -164,9 +171,16 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (error) setError(null);
+                }}
                 placeholder="Digite sua senha de acesso"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition pr-11"
+                className={`w-full px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none transition pr-11 ${
+                  error
+                    ? 'bg-rose-50/40 border border-rose-300 ring-2 ring-rose-200/70 focus:ring-rose-300'
+                    : 'bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-sky-500 focus:bg-white'
+                }`}
               />
               <button
                 type="button"
@@ -180,8 +194,8 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium animate-in fade-in">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+            <div className="flex items-start gap-2.5 p-3 bg-rose-50/90 border border-rose-200 text-rose-800 rounded-xl text-xs font-medium animate-in fade-in leading-relaxed shadow-xs">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
