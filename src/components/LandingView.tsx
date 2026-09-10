@@ -15,7 +15,6 @@ interface LandingViewProps {
   onSelectPatient?: () => void;
   onOpenNutriLogin?: () => void;
   onOpenPatientLogin?: () => void;
-  onInjectMock?: () => void;
   patientCount?: number;
   unreadCount?: number;
 }

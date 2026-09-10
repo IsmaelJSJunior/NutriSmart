@@ -148,7 +148,7 @@ export const PatientLoginModal: React.FC<PatientLoginModalProps> = ({
                 type="text"
                 value={patientIdentifier}
                 onChange={(e) => setPatientIdentifier(e.target.value)}
-                placeholder="Ex: Ana Silva ou ANA1"
+                placeholder="Ex: Nome do Paciente ou Código (ex: PAC1)"
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition pr-10"
                 autoFocus
               />

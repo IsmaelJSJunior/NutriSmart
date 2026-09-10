@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Coleção de Prontuários e Avaliações Clínicas
+    match /reports/{reportId} {
+      allow read, write: if true;
+    }
+
+    // Coleção de Pacientes
+    match /patients/{patientId} {
+      allow read, write: if true;
+    }
+
+    // Coleção de Agenda / Consultas
+    match /agenda/{appointmentId} {
+      allow read, write: if true;
+    }
+
+    // Coleção de Chat Nutricionista ↔ Paciente
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // Coleção de Receitas Salvas
+    match /recipes/{recipeId} {
+      allow read, write: if true;
+    }
+
+    // Coleção de Sessão da Calculadora Nutricional
+    match /calculator/{docId} {
+      allow read, write: if true;
+    }
+
+    // Fallback de desenvolvimento e produção multi-dispositivo
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -75,12 +75,6 @@ export default function App() {
       setChatMessages(data);
     });
 
-    // Auto-seed sample patient if local database is empty
-    const currentLocalReports = dataStore.getReports();
-    if (!currentLocalReports || currentLocalReports.length === 0) {
-      dataStore.seedInitialData().catch(console.warn);
-    }
-
     // Check existing session in localStorage
     const savedRole = localStorage.getItem('nutriclinical_session_role') || localStorage.getItem('nutrismart_session_role');
     const savedCode = localStorage.getItem('nutriclinical_session_patient_code') || localStorage.getItem('nutrismart_session_patient_code');
@@ -281,10 +275,6 @@ export default function App() {
             onOpenPatientLogin={() => setShowPatientLogin(true)}
             patientCount={reports.length}
             unreadCount={unreadChatCount}
-            onInjectMock={async () => {
-              await dataStore.seedInitialData();
-              showToast('Prontuário de demonstração da Ana Silva (ANA1) carregado!');
-            }}
           />
         )}
 

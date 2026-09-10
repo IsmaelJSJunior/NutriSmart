@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NutriClinical Firestore Blueprint",
+  "description": "Blueprint das coleções do NutriClinical para persistência em nuvem e sincronização em tempo real.",
+  "entities": {
+    "ReportRecord": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "patientCode": { "type": "string" },
+        "formData": { "type": "object" },
+        "aiData": { "type": "object" },
+        "aiMealPlan": { "type": "string" },
+        "fichaNumber": { "type": "number" },
+        "pinned": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "patientCode", "formData"]
+    },
+    "PatientSummary": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientCode": { "type": "string" },
+        "nome": { "type": "string" },
+        "telefone": { "type": "string" },
+        "email": { "type": "string" },
+        "senha": { "type": "string" },
+        "lastDate": { "type": "string" },
+        "consultationCount": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "patientCode", "nome"]
+    },
+    "Appointment": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "notes": { "type": "string" },
+        "type": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "date", "time"]
+    },
+    "ChatMessage": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientCode": { "type": "string" },
+        "sender": { "type": "string", "enum": ["nutri", "patient", "system"] },
+        "text": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "patientCode", "sender", "text", "timestamp"]
+    },
+    "RecipeItem": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string" },
+        "tempo": { "type": "string" },
+        "ingredientes": { "type": "string" },
+        "preparo": { "type": "string" },
+        "nutricao": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["nome", "tempo", "ingredientes", "preparo"]
+    },
+    "CalculatorSession": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patient": { "type": "object" },
+        "macros": { "type": "object" },
+        "meals": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/ReportRecord" },
+      "description": "Prontuários e fichas clínicas nutricionais"
+    },
+    "/patients/{patientId}": {
+      "schema": { "$ref": "#/entities/PatientSummary" },
+      "description": "Resumo cadastral de pacientes para busca e sincronização rápida"
+    },
+    "/agenda/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Consultas e compromissos da agenda"
+    },
+    "/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Mensagens de chat entre nutricionista e paciente"
+    },
+    "/recipes/{recipeId}": {
+      "schema": { "$ref": "#/entities/RecipeItem" },
+      "description": "Receitas salvas e prescrições culinárias inteligentes"
+    },
+    "/calculator/{docId}": {
+      "schema": { "$ref": "#/entities/CalculatorSession" },
+      "description": "Estado e sessões da calculadora nutricional"
+    }
+  }
+}

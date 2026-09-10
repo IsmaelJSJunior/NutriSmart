@@ -289,7 +289,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ agenda, onBack }) => {
                       type="text"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Ex: Consulta Ana Silva ou Visita Hospitalar"
+                      placeholder="Ex: Consulta de Retorno ou Avaliação Nutricional"
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none transition shadow-2xs"
                     />
                   </div>

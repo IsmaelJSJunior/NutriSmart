@@ -1,68 +1,72 @@
-import { ReportRecord, ChatMessage, Appointment, PatientFormData, RecipeItem } from '../types';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, User } from 'firebase/auth';
 import {
-  getFirestore,
   collection,
-  onSnapshot,
   doc,
   setDoc,
   deleteDoc,
-  addDoc,
-  Firestore,
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp,
 } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from './firebase';
+import { ReportRecord, ChatMessage, Appointment, RecipeItem } from '../types';
 
-// Storage keys for local fallback / caching
-const STORAGE_KEYS = {
+// ==========================================
+// STORAGE KEYS & CACHE DEFINITIONS
+// ==========================================
+export const STORAGE_KEYS = {
   REPORTS: 'nutriclinical_reports_v1',
-  MESSAGES: 'nutriclinical_messages_v1',
+  MESSAGES: 'nutriclinical_chat_v1',
   AGENDA: 'nutriclinical_agenda_v1',
-  RECIPES: 'nutriclinical_saved_recipes_v1',
-  CALCULATOR: 'nutriclinical_calculator_v1',
-};
+  RECIPES: 'nutriclinical_recipes_v1',
+  CALCULATOR: 'nutriclinical_calc_session_v1',
+  PINNED_PATIENTS: 'nutriclinical_pinned_patients_v1',
+  RECIPE_QUOTAS: 'nutriclinical_recipe_quotas_v1',
+  SYNC_LOGS: 'nutriclinical_sync_logs_v1',
+} as const;
 
-declare global {
-  interface Window {
-    __firebase_config?: string;
-    __app_id?: string;
-    __initial_auth_token?: string;
-  }
+export interface SyncLogEntry {
+  id: string;
+  action: string;
+  description: string;
+  timestamp: string;
+  status: 'success' | 'syncing' | 'error';
+  type: 'report' | 'appointment' | 'chat' | 'recipe' | 'calculator' | 'system';
 }
 
-let firebaseDb: Firestore | null = null;
-let appId = 'default-nutriclinical-id';
-
-// Initialize Firebase if configuration exists
-try {
-  const configStr = typeof window !== 'undefined' ? window.__firebase_config : undefined;
-  if (configStr) {
-    const config = JSON.parse(configStr);
-    if (Object.keys(config).length > 0) {
-      const app = getApps().length === 0 ? initializeApp(config) : getApp();
-      firebaseDb = getFirestore(app);
-      const auth = getAuth(app);
-      appId = window.__app_id || 'nutriclinical-prod';
-
-      if (window.__initial_auth_token) {
-        signInWithCustomToken(auth, window.__initial_auth_token).catch(() => signInAnonymously(auth));
-      } else {
-        signInAnonymously(auth).catch((err) => console.warn('Firebase Auth:', err));
-      }
-    }
-  }
-} catch (e) {
-  console.warn('Firebase initialization skipped or in local mode:', e);
+export function isMockItem(id?: string): boolean {
+  if (!id) return false;
+  return id.startsWith('mock_ana_silva') || id.startsWith('appnt_') || id.startsWith('msg_init_');
 }
 
-// Local Storage helpers
+const DEFAULT_SYNC_LOGS: SyncLogEntry[] = [
+  {
+    id: 'log_system_init',
+    action: 'Sincronização em nuvem ativa',
+    description: 'Firebase Firestore conectado em tempo real',
+    timestamp: new Date().toISOString(),
+    status: 'success',
+    type: 'system',
+  },
+];
+
+// Firestore Collection Names (Single Source of Truth)
+const COLLECTIONS = {
+  REPORTS: 'reports',
+  PATIENTS: 'patients',
+  AGENDA: 'agenda',
+  MESSAGES: 'messages',
+  RECIPES: 'recipes',
+  CALCULATOR: 'calculator',
+} as const;
+
+export type SyncStatus = 'synced' | 'connecting' | 'offline';
+
+// Helper for local cache resilience
 export function getLocalData<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
   try {
-    let item = localStorage.getItem(key);
-    // Backward compatibility with previous storage keys
-    if (!item && key.startsWith('nutriclinical_')) {
-      const legacyKey = key.replace('nutriclinical_', 'nutrismart_');
-      item = localStorage.getItem(legacyKey);
-    }
+    const item = localStorage.getItem(key);
     return item ? JSON.parse(item) : fallback;
   } catch {
     return fallback;
@@ -70,532 +74,706 @@ export function getLocalData<T>(key: string, fallback: T): T {
 }
 
 export function setLocalData<T>(key: string, value: T): void {
+  if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(key, JSON.stringify(value));
-    window.dispatchEvent(new Event('nutriclinical_storage_updated'));
-    window.dispatchEvent(new Event('nutrismart_storage_updated'));
   } catch (e) {
-    console.error('Local storage write error:', e);
+    console.warn('LocalStorage write failed:', e);
   }
 }
 
+// Sanitize objects for Firestore to prevent "Unsupported field value: undefined"
+function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) return null as any;
+  if (Array.isArray(data)) {
+    return data.map(sanitizeForFirestore) as any;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const clean: Record<string, any> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== undefined) {
+        clean[k] = sanitizeForFirestore(v);
+      }
+    }
+    return clean as any;
+  }
+  return data;
+}
+
+// ==========================================
+// PINNED PATIENTS HELPERS
+// ==========================================
 export function getPinnedPatientCodes(): string[] {
-  return getLocalData<string[]>('nutriclinical_pinned_patients_v1', []);
+  return getLocalData<string[]>(STORAGE_KEYS.PINNED_PATIENTS, []);
 }
 
 export function togglePinnedPatientCode(code: string): string[] {
   const current = getPinnedPatientCodes();
-  const upper = code.toUpperCase();
-  const updated = current.includes(upper) ? current.filter((c) => c !== upper) : [upper, ...current];
-  setLocalData('nutriclinical_pinned_patients_v1', updated);
+  const normalized = code.trim().toUpperCase();
+  const exists = current.includes(normalized);
+  const updated = exists ? current.filter((c) => c !== normalized) : [...current, normalized];
+  setLocalData(STORAGE_KEYS.PINNED_PATIENTS, updated);
   return updated;
 }
 
+// ==========================================
+// RECIPE QUOTAS
+// ==========================================
 export interface PatientRecipeQuota {
-  recipesGeneratedToday: number;
-  lastGenerationDate: string;
+  patientCode: string;
+  count: number;
+  lastUsedDate: string;
 }
 
-export function getPatientRecipeQuota(patientCode?: string): PatientRecipeQuota {
-  const todayStr = new Date().toISOString().split('T')[0];
-  if (!patientCode) {
-    return { recipesGeneratedToday: 0, lastGenerationDate: todayStr };
+export function getPatientRecipeQuota(patientCode: string): PatientRecipeQuota {
+  const today = new Date().toISOString().split('T')[0];
+  const all = getLocalData<Record<string, PatientRecipeQuota>>(STORAGE_KEYS.RECIPE_QUOTAS, {});
+  const code = patientCode.trim().toUpperCase();
+  const quota = all[code];
+  if (!quota || quota.lastUsedDate !== today) {
+    return { patientCode: code, count: 0, lastUsedDate: today };
   }
-  const key = `nutriclinical_quota_${patientCode.toUpperCase()}`;
-  const stored = getLocalData<PatientRecipeQuota | null>(key, null);
-  if (!stored || stored.lastGenerationDate !== todayStr) {
-    const fresh: PatientRecipeQuota = {
-      recipesGeneratedToday: 0,
-      lastGenerationDate: todayStr,
-    };
-    setLocalData(key, fresh);
-    return fresh;
-  }
-  return stored;
+  return quota;
 }
 
-export function incrementPatientRecipeQuota(patientCode?: string, count: number = 1): PatientRecipeQuota {
-  const todayStr = new Date().toISOString().split('T')[0];
-  if (!patientCode) {
-    return { recipesGeneratedToday: 0, lastGenerationDate: todayStr };
-  }
-  const key = `nutriclinical_quota_${patientCode.toUpperCase()}`;
-  const current = getPatientRecipeQuota(patientCode);
-  const updated: PatientRecipeQuota = {
-    recipesGeneratedToday: Math.min(4, (current.recipesGeneratedToday || 0) + count),
-    lastGenerationDate: todayStr,
-  };
-  setLocalData(key, updated);
-  return updated;
+export function incrementPatientRecipeQuota(patientCode: string, count: number = 1): number {
+  const today = new Date().toISOString().split('T')[0];
+  const all = getLocalData<Record<string, PatientRecipeQuota>>(STORAGE_KEYS.RECIPE_QUOTAS, {});
+  const code = patientCode.trim().toUpperCase();
+  const current = all[code] && all[code].lastUsedDate === today ? all[code].count : 0;
+  const newCount = current + count;
+  all[code] = { patientCode: code, count: newCount, lastUsedDate: today };
+  setLocalData(STORAGE_KEYS.RECIPE_QUOTAS, all);
+  return newCount;
 }
 
-// Multi-storage synchronization interface
+// ==========================================
+// CENTRAL DATA STORE (Cloud-First SSoT)
+// ==========================================
 export class DataStore {
-  private reportsListeners: Array<(reports: ReportRecord[]) => void> = [];
-  private messagesListeners: Array<(messages: ChatMessage[]) => void> = [];
-  private agendaListeners: Array<(agenda: Appointment[]) => void> = [];
-  private recipesListeners: Array<(recipes: RecipeItem[]) => void> = [];
-  private calculatorListeners: Array<(data: any) => void> = [];
-  private statusListeners: Array<(status: 'synced' | 'connecting' | 'offline') => void> = [];
-
-  private status: 'synced' | 'connecting' | 'offline' = 'connecting';
   private reports: ReportRecord[] = [];
   private messages: ChatMessage[] = [];
   private agenda: Appointment[] = [];
   private recipes: RecipeItem[] = [];
   private calculatorState: any = null;
-  private syncChannel: BroadcastChannel | null = null;
+  private syncLogs: SyncLogEntry[] = [];
+
+  private reportsListeners: Set<(data: ReportRecord[]) => void> = new Set();
+  private messagesListeners: Set<(data: ChatMessage[]) => void> = new Set();
+  private agendaListeners: Set<(data: Appointment[]) => void> = new Set();
+  private recipesListeners: Set<(data: RecipeItem[]) => void> = new Set();
+  private calculatorListeners: Set<(data: any) => void> = new Set();
+  private statusListeners: Set<(status: SyncStatus) => void> = new Set();
+  private syncingListeners: Set<(isSyncing: boolean) => void> = new Set();
+  private syncLogsListeners: Set<(logs: SyncLogEntry[]) => void> = new Set();
+
+  private status: SyncStatus = 'connecting';
+  private isSyncing: boolean = false;
+  private hasInitializedRemote: boolean = false;
+  private syncCount: number = 0;
 
   constructor() {
-    this.reports = getLocalData<ReportRecord[]>(STORAGE_KEYS.REPORTS, []);
-    this.messages = getLocalData<ChatMessage[]>(STORAGE_KEYS.MESSAGES, []);
-    this.agenda = getLocalData<Appointment[]>(STORAGE_KEYS.AGENDA, []);
+    // 1. Initialize from local storage cache, purging any previous mock data
+    this.reports = getLocalData<ReportRecord[]>(STORAGE_KEYS.REPORTS, []).filter((r) => !isMockItem(r.id));
+    this.messages = getLocalData<ChatMessage[]>(STORAGE_KEYS.MESSAGES, []).filter((m) => !isMockItem(m.id));
+    this.agenda = getLocalData<Appointment[]>(STORAGE_KEYS.AGENDA, []).filter((a) => !isMockItem(a.id));
     this.recipes = getLocalData<RecipeItem[]>(STORAGE_KEYS.RECIPES, []);
     this.calculatorState = getLocalData<any>(STORAGE_KEYS.CALCULATOR, null);
+    this.syncLogs = getLocalData<SyncLogEntry[]>(STORAGE_KEYS.SYNC_LOGS, DEFAULT_SYNC_LOGS).filter(
+      (l) => !l.description.includes('Ana Silva') && !l.description.includes('Qualisan')
+    );
 
-    // Instant Cross-Tab & Cross-Window Local Synchronization
-    try {
-      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        this.syncChannel = new BroadcastChannel('nutriclinical_sync_channel');
-        this.syncChannel.onmessage = () => {
-          this.syncFromLocal();
-        };
-      }
-    } catch {
-      // Ignore if not supported in environment
-    }
+    setLocalData(STORAGE_KEYS.REPORTS, this.reports);
+    setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
+    setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
+    setLocalData(STORAGE_KEYS.SYNC_LOGS, this.syncLogs);
 
-    // Ensure initial mock messages are marked as read so no false badge appears
-    let cleaned = false;
-    this.messages = this.messages.map((m) => {
-      if (m.id === 'msg_init_2' && m.read !== true) {
-        cleaned = true;
-        return { ...m, read: true };
-      }
-      return m;
-    });
-    if (cleaned) {
-      setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
-    }
+    // 2. Start Cloud-First Firestore real-time synchronization
+    this.initFirestoreSync();
+  }
 
-    // Ensure all existing reports have a registered password so credentials block is always populated
-    let reportsCleaned = false;
-    this.reports = this.reports.map((r) => {
-      if (!r.formData.senha) {
-        reportsCleaned = true;
-        const fallbackPass = r.patientCode.toUpperCase() === 'ANA1' ? 'ana123' : `Nutri${r.patientCode || '123'}$`;
-        return {
-          ...r,
-          formData: {
-            ...r.formData,
-            senha: fallbackPass,
-          },
-        };
-      }
-      return r;
-    });
-    if (reportsCleaned) {
-      setLocalData(STORAGE_KEYS.REPORTS, this.reports);
-    }
+  // Status & Syncing Getters & Subscriptions
+  public getStatus(): SyncStatus {
+    return this.status;
+  }
 
-    if (firebaseDb) {
-      this.initFirestoreSync();
+  public getIsSyncing(): boolean {
+    return this.isSyncing;
+  }
+
+  public getSyncLogs(): SyncLogEntry[] {
+    return this.syncLogs;
+  }
+
+  public subscribeSyncLogs(fn: (logs: SyncLogEntry[]) => void): () => void {
+    this.syncLogsListeners.add(fn);
+    fn(this.syncLogs);
+    return () => this.syncLogsListeners.delete(fn);
+  }
+
+  public addSyncLog(entry: Omit<SyncLogEntry, 'id' | 'timestamp'> & { timestamp?: string }): void {
+    const newEntry: SyncLogEntry = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: entry.timestamp || new Date().toISOString(),
+      ...entry,
+    };
+    // Keep most recent first, max 20 entries
+    this.syncLogs = [newEntry, ...this.syncLogs.filter((l) => l.id !== newEntry.id)].slice(0, 20);
+    setLocalData(STORAGE_KEYS.SYNC_LOGS, this.syncLogs);
+    this.syncLogsListeners.forEach((fn) => fn(this.syncLogs));
+  }
+
+  public subscribeStatus(fn: (status: SyncStatus) => void): () => void {
+    this.statusListeners.add(fn);
+    fn(this.status);
+    return () => this.statusListeners.delete(fn);
+  }
+
+  public subscribeSyncing(fn: (isSyncing: boolean) => void): () => void {
+    this.syncingListeners.add(fn);
+    fn(this.isSyncing);
+    return () => this.syncingListeners.delete(fn);
+  }
+
+  private setSyncing(syncing: boolean): void {
+    if (syncing) {
+      this.syncCount++;
     } else {
-      this.status = 'synced';
-      this.notifyStatus();
+      this.syncCount = Math.max(0, this.syncCount - 1);
     }
-
-    // Cross-tab sync
-    window.addEventListener('storage', () => this.syncFromLocal());
-    window.addEventListener('nutriclinical_storage_updated', () => this.syncFromLocal());
-    window.addEventListener('nutrismart_storage_updated', () => this.syncFromLocal());
-  }
-
-  private notifyStatus() {
-    this.statusListeners.forEach((fn) => fn(this.status));
-  }
-
-  private broadcastLocalUpdate() {
-    try {
-      this.syncChannel?.postMessage({ type: 'sync', timestamp: Date.now() });
-    } catch {
-      // Ignore broadcast errors
+    const currentSyncing = this.syncCount > 0;
+    if (this.isSyncing !== currentSyncing) {
+      this.isSyncing = currentSyncing;
+      this.syncingListeners.forEach((fn) => fn(this.isSyncing));
     }
   }
 
-  private syncFromLocal() {
-    this.reports = getLocalData<ReportRecord[]>(STORAGE_KEYS.REPORTS, []);
-    this.messages = getLocalData<ChatMessage[]>(STORAGE_KEYS.MESSAGES, []);
-    this.agenda = getLocalData<Appointment[]>(STORAGE_KEYS.AGENDA, []);
-    this.recipes = getLocalData<RecipeItem[]>(STORAGE_KEYS.RECIPES, []);
-    this.calculatorState = getLocalData<any>(STORAGE_KEYS.CALCULATOR, null);
-    this.notifyAll();
+  private setStatus(newStatus: SyncStatus): void {
+    if (this.status !== newStatus) {
+      this.status = newStatus;
+      this.statusListeners.forEach((fn) => fn(this.status));
+    }
   }
 
-  private notifyAll() {
-    this.reportsListeners.forEach((fn) => fn(this.reports));
-    this.messagesListeners.forEach((fn) => fn(this.messages));
-    this.agendaListeners.forEach((fn) => fn(this.agenda));
-    this.recipesListeners.forEach((fn) => fn(this.recipes));
-    this.calculatorListeners.forEach((fn) => fn(this.calculatorState));
-  }
+  // ==========================================
+  // FIRESTORE REAL-TIME LISTENERS (onSnapshot)
+  // ==========================================
+  private initFirestoreSync(): void {
+    if (!db) {
+      this.setStatus('offline');
+      return;
+    }
 
-  private initFirestoreSync() {
-    if (!firebaseDb) return;
     try {
-      this.status = 'connecting';
-      this.notifyStatus();
+      this.setStatus('connecting');
 
-      const reportsRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'reports');
+      // 1. Prontuários e Fichas Clínicas (Reports)
+      const reportsRef = collection(db, COLLECTIONS.REPORTS);
       onSnapshot(
         reportsRef,
         (snapshot) => {
-          const remoteReports = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as ReportRecord));
+          const remoteReports = snapshot.docs
+            .map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                ...data,
+              } as ReportRecord;
+            })
+            .filter((r) => {
+              if (
+                isMockItem(r.id) ||
+                (r.patientCode === 'ANA1' && r.formData?.nome === 'Ana Silva' && r.id.startsWith('mock_'))
+              ) {
+                // Delete legacy mock data from cloud Firestore
+                if (db) {
+                  deleteDoc(doc(db, COLLECTIONS.REPORTS, r.id)).catch(() => {});
+                }
+                return false;
+              }
+              return true;
+            });
+
+          // Sort by consultation date descending
           remoteReports.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
           this.reports = remoteReports;
+          // Update local cache as secondary storage
           setLocalData(STORAGE_KEYS.REPORTS, this.reports);
           this.reportsListeners.forEach((fn) => fn(this.reports));
-          this.status = 'synced';
-          this.notifyStatus();
+          this.setStatus('synced');
         },
-        (err) => {
-          console.warn('Firestore reports snapshot failed, using local storage:', err);
-          this.status = 'offline';
-          this.notifyStatus();
+        (error) => {
+          console.warn('NutriClinical Firestore reports listener error:', error);
+          this.setStatus('offline');
         }
       );
 
-      const msgsRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'messages');
+      // 2. Chat Nutricionista ↔ Paciente (Messages)
+      const messagesRef = collection(db, COLLECTIONS.MESSAGES);
       onSnapshot(
-        msgsRef,
+        messagesRef,
         (snapshot) => {
-          const remoteMsgs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as ChatMessage));
-          this.messages = remoteMsgs;
+          const remoteMessages = snapshot.docs
+            .map((d) => ({
+              id: d.id,
+              ...d.data(),
+            } as ChatMessage))
+            .filter((m) => {
+              if (isMockItem(m.id) || (m.patientCode === 'ANA1' && m.id.startsWith('msg_init_'))) {
+                if (db) {
+                  deleteDoc(doc(db, COLLECTIONS.MESSAGES, m.id)).catch(() => {});
+                }
+                return false;
+              }
+              return true;
+            });
+
+          // Sort messages chronologically
+          remoteMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+          this.messages = remoteMessages;
           setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
           this.messagesListeners.forEach((fn) => fn(this.messages));
+          this.setStatus('synced');
         },
-        () => {}
+        (error) => {
+          console.warn('NutriClinical Firestore chat listener error:', error);
+        }
       );
 
-      const agendaRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'agenda');
+      // 3. Agenda Integrada / Consultas (Appointments)
+      const agendaRef = collection(db, COLLECTIONS.AGENDA);
       onSnapshot(
         agendaRef,
         (snapshot) => {
-          const remoteAgenda = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Appointment));
+          const remoteAgenda = snapshot.docs
+            .map((d) => ({
+              id: d.id,
+              ...d.data(),
+            } as Appointment))
+            .filter((a) => {
+              if (
+                isMockItem(a.id) ||
+                (a.title?.includes('Ana Silva') && a.id.startsWith('appnt_')) ||
+                (a.title?.includes('Dr. Ricardo') && a.id.startsWith('appnt_'))
+              ) {
+                if (db) {
+                  deleteDoc(doc(db, COLLECTIONS.AGENDA, a.id)).catch(() => {});
+                }
+                return false;
+              }
+              return true;
+            });
+
+          remoteAgenda.sort((a, b) => {
+            const dateA = new Date(`${a.date}T${a.time || '00:00'}`).getTime();
+            const dateB = new Date(`${b.date}T${b.time || '00:00'}`).getTime();
+            return dateA - dateB;
+          });
+
           this.agenda = remoteAgenda;
           setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
           this.agendaListeners.forEach((fn) => fn(this.agenda));
+          this.setStatus('synced');
         },
-        () => {}
+        (error) => {
+          console.warn('NutriClinical Firestore agenda listener error:', error);
+        }
       );
 
-      const recipesRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes');
+      // 4. Receitas Salvas e Prescrições (Recipes)
+      const recipesRef = collection(db, COLLECTIONS.RECIPES);
       onSnapshot(
         recipesRef,
         (snapshot) => {
-          const remoteRecipes = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as unknown as RecipeItem));
+          const remoteRecipes = snapshot.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          } as unknown as RecipeItem));
+
           this.recipes = remoteRecipes;
           setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
           this.recipesListeners.forEach((fn) => fn(this.recipes));
+          this.setStatus('synced');
         },
-        () => {}
+        (error) => {
+          console.warn('NutriClinical Firestore recipes listener error:', error);
+        }
       );
 
-      const calculatorRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'calculator');
+      // 5. Calculadora Nutricional (Calculator Session)
+      const calculatorDocRef = doc(db, COLLECTIONS.CALCULATOR, 'latest');
       onSnapshot(
-        calculatorRef,
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const data = snapshot.docs[0].data();
-            this.calculatorState = data;
+        calculatorDocRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            this.calculatorState = docSnap.data();
             setLocalData(STORAGE_KEYS.CALCULATOR, this.calculatorState);
             this.calculatorListeners.forEach((fn) => fn(this.calculatorState));
           }
+          this.setStatus('synced');
         },
-        () => {}
+        (error) => {
+          console.warn('NutriClinical Firestore calculator listener error:', error);
+        }
       );
     } catch (e) {
-      console.warn('Firestore subscription error:', e);
-      this.status = 'offline';
-      this.notifyStatus();
+      console.warn('NutriClinical: Erro fatal ao configurar listeners Firestore:', e);
+      this.setStatus('offline');
     }
   }
 
-  public onReports(callback: (reports: ReportRecord[]) => void) {
-    this.reportsListeners.push(callback);
-    callback(this.reports);
-    return () => {
-      this.reportsListeners = this.reportsListeners.filter((fn) => fn !== callback);
-    };
+  // ==========================================
+  // SUBSCRIBERS
+  // ==========================================
+  public subscribeReports(fn: (data: ReportRecord[]) => void): () => void {
+    this.reportsListeners.add(fn);
+    fn(this.reports);
+    return () => this.reportsListeners.delete(fn);
   }
 
-  public onMessages(callback: (messages: ChatMessage[]) => void) {
-    this.messagesListeners.push(callback);
-    callback(this.messages);
-    return () => {
-      this.messagesListeners = this.messagesListeners.filter((fn) => fn !== callback);
-    };
+  public subscribeChat(fn: (data: ChatMessage[]) => void): () => void {
+    this.messagesListeners.add(fn);
+    fn(this.messages);
+    return () => this.messagesListeners.delete(fn);
   }
 
-  public onAgenda(callback: (agenda: Appointment[]) => void) {
-    this.agendaListeners.push(callback);
-    callback(this.agenda);
-    return () => {
-      this.agendaListeners = this.agendaListeners.filter((fn) => fn !== callback);
-    };
+  public subscribeAgenda(fn: (data: Appointment[]) => void): () => void {
+    this.agendaListeners.add(fn);
+    fn(this.agenda);
+    return () => this.agendaListeners.delete(fn);
   }
 
-  public onRecipes(callback: (recipes: RecipeItem[]) => void) {
-    this.recipesListeners.push(callback);
-    callback(this.recipes);
-    return () => {
-      this.recipesListeners = this.recipesListeners.filter((fn) => fn !== callback);
-    };
+  public subscribeRecipes(fn: (data: RecipeItem[]) => void): () => void {
+    this.recipesListeners.add(fn);
+    fn(this.recipes);
+    return () => this.recipesListeners.delete(fn);
   }
 
-  public onCalculator(callback: (data: any) => void) {
-    this.calculatorListeners.push(callback);
-    callback(this.calculatorState);
-    return () => {
-      this.calculatorListeners = this.calculatorListeners.filter((fn) => fn !== callback);
-    };
+  public subscribeCalculator(fn: (data: any) => void): () => void {
+    this.calculatorListeners.add(fn);
+    fn(this.calculatorState);
+    return () => this.calculatorListeners.delete(fn);
   }
 
-  public onStatus(callback: (status: 'synced' | 'connecting' | 'offline') => void) {
-    this.statusListeners.push(callback);
-    callback(this.status);
-    return () => {
-      this.statusListeners = this.statusListeners.filter((fn) => fn !== callback);
-    };
-  }
-
-  // Aliases for clean reactive bindings
-  public subscribeReports(callback: (reports: ReportRecord[]) => void) {
-    return this.onReports(callback);
-  }
-
-  public subscribeAgenda(callback: (agenda: Appointment[]) => void) {
-    return this.onAgenda(callback);
-  }
-
-  public subscribeChat(callback: (messages: ChatMessage[]) => void) {
-    return this.onMessages(callback);
-  }
-
-  public subscribeRecipes(callback: (recipes: RecipeItem[]) => void) {
-    return this.onRecipes(callback);
-  }
-
-  public subscribeCalculator(callback: (data: any) => void) {
-    return this.onCalculator(callback);
-  }
-
+  // Getters
   public getReports(): ReportRecord[] {
-    return [...this.reports];
-  }
-
-  public getAgenda(): Appointment[] {
-    return [...this.agenda];
+    return this.reports;
   }
 
   public getMessages(): ChatMessage[] {
-    return [...this.messages];
+    return this.messages;
+  }
+
+  public getAgenda(): Appointment[] {
+    return this.agenda;
   }
 
   public getRecipes(): RecipeItem[] {
-    return [...this.recipes];
+    return this.recipes;
   }
 
   public getCalculatorState(): any {
     return this.calculatorState;
   }
 
-  public async seedInitialData(): Promise<void> {
-    return this.injectMockData();
-  }
+  // ==========================================
+  // MUTATIONS (Cloud-First Writes with serverTimestamp)
+  // ==========================================
 
-  public async restoreBackup(data: {
-    reports?: ReportRecord[];
-    agenda?: Appointment[];
-    appointments?: Appointment[];
-    chatMessages?: ChatMessage[];
-    allMessages?: ChatMessage[];
-    recipes?: RecipeItem[];
-    calculatorState?: any;
-    pinnedPatients?: string[];
-  }): Promise<void> {
-    if (data.reports) {
-      for (const r of data.reports) {
-        await this.saveReport(r);
-      }
-    }
-    const appts = data.agenda || data.appointments;
-    if (appts) {
-      for (const a of appts) {
-        await this.saveAppointment(a);
-      }
-    }
-    const msgs = data.chatMessages || data.allMessages;
-    if (msgs) {
-      for (const m of msgs) {
-        await this.sendMessage(m);
-      }
-    }
-    if (data.recipes && Array.isArray(data.recipes)) {
-      for (const rec of data.recipes) {
-        await this.saveRecipe(rec);
-      }
-    }
-    if (data.calculatorState) {
-      await this.saveCalculatorState(data.calculatorState);
-    }
-    if (data.pinnedPatients && Array.isArray(data.pinnedPatients)) {
-      setLocalData('nutriclinical_pinned_patients_v1', data.pinnedPatients);
-    }
-  }
+  // 1. Salvar ou Atualizar Prontuário / Ficha Clínica
+  public async saveReport(report: (Omit<ReportRecord, 'id'> & { id?: string }) | ReportRecord): Promise<void> {
+    const reportId = report.id || `report_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullReport: ReportRecord = {
+      ...report,
+      id: reportId,
+      patientCode: (report.patientCode || report.formData?.patientCode || 'PACIENTE').toUpperCase(),
+    };
 
-  // Save or update a clinical report
-  public async saveReport(report: ReportRecord): Promise<void> {
-    const existingIndex = this.reports.findIndex((r) => r.id === report.id);
-    if (existingIndex >= 0) {
-      this.reports[existingIndex] = report;
+    const isUpdate = this.reports.some((r) => r.id === fullReport.id);
+    const patientName = fullReport.formData?.nome || 'Paciente';
+
+    // Optimistic local update
+    const index = this.reports.findIndex((r) => r.id === fullReport.id);
+    if (index >= 0) {
+      this.reports[index] = fullReport;
     } else {
-      this.reports.unshift(report);
+      this.reports.unshift(fullReport);
     }
     setLocalData(STORAGE_KEYS.REPORTS, this.reports);
     this.reportsListeners.forEach((fn) => fn(this.reports));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: isUpdate ? 'Prontuário atualizado' : 'Adicionado prontuário',
+      description: `${patientName} (${fullReport.patientCode})`,
+      status: 'success',
+      type: 'report',
+    });
+
+    // Cloud write
+    if (db) {
+      this.setSyncing(true);
       try {
-        const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'reports', report.id);
-        await setDoc(docRef, report, { merge: true });
+        const reportDocRef = doc(db, COLLECTIONS.REPORTS, fullReport.id);
+        const reportPayload = sanitizeForFirestore({
+          ...fullReport,
+          updatedAt: serverTimestamp(),
+          clientUpdatedAt: new Date().toISOString(),
+        });
+        await setDoc(reportDocRef, reportPayload, { merge: true });
+
+        // Também sincroniza/atualiza o documento resumo de paciente em /patients/{code}
+        const patientCode = fullReport.patientCode.toUpperCase();
+        const patientDocRef = doc(db, COLLECTIONS.PATIENTS, patientCode);
+        const patientPayload = sanitizeForFirestore({
+          id: patientCode,
+          patientCode: patientCode,
+          nome: fullReport.formData?.nome || 'Paciente',
+          telefone: fullReport.formData?.telefone || '',
+          email: fullReport.formData?.email || '',
+          senha: fullReport.formData?.senha || '',
+          lastReportId: fullReport.id,
+          lastDate: fullReport.date,
+          updatedAt: serverTimestamp(),
+        });
+        await setDoc(patientDocRef, patientPayload, { merge: true });
+
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore report save error:', e);
+        console.warn('Erro ao sincronizar prontuário no Firestore:', e);
+        this.addSyncLog({
+          action: 'Erro ao salvar prontuário',
+          description: `${patientName} (${fullReport.patientCode})`,
+          status: 'error',
+          type: 'report',
+        });
+        handleFirestoreError(e, OperationType.WRITE, `reports/${fullReport.id}`);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Delete a report
+  // 2. Excluir Prontuário / Ficha Clínica
   public async deleteReport(id: string): Promise<void> {
+    const existing = this.reports.find((r) => r.id === id);
+    const desc = existing ? `${existing.formData?.nome || 'Paciente'} (${existing.patientCode})` : `ID: ${id}`;
+
+    // Optimistic local update
     this.reports = this.reports.filter((r) => r.id !== id);
     setLocalData(STORAGE_KEYS.REPORTS, this.reports);
     this.reportsListeners.forEach((fn) => fn(this.reports));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: 'Prontuário excluído',
+      description: desc,
+      status: 'success',
+      type: 'report',
+    });
+
+    // Cloud delete
+    if (db) {
+      this.setSyncing(true);
       try {
-        await deleteDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'reports', id));
+        const docRef = doc(db, COLLECTIONS.REPORTS, id);
+        await deleteDoc(docRef);
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore report delete error:', e);
+        console.warn('Erro ao excluir prontuário no Firestore:', e);
+        handleFirestoreError(e, OperationType.DELETE, `reports/${id}`);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Send a chat message
-  public async sendMessage(msg: Omit<ChatMessage, 'id'>): Promise<void> {
-    const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-    const newMsg: ChatMessage = {
-      id,
-      ...msg,
-      read: msg.read ?? (msg.sender === 'nutri' ? true : false),
+  // 3. Enviar Mensagem de Chat
+  public async sendMessage(message: (Omit<ChatMessage, 'id'> & { id?: string }) | ChatMessage): Promise<void> {
+    const msgId = message.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullMsg: ChatMessage = {
+      ...message,
+      id: msgId,
+      patientCode: message.patientCode.toUpperCase(),
+      timestamp: message.timestamp || new Date().toISOString(),
     };
-    this.messages.push(newMsg);
+
+    const senderRole = message.sender === 'nutri' ? 'Nutricionista' : 'Paciente';
+    const previewText = fullMsg.text ? (fullMsg.text.length > 25 ? fullMsg.text.slice(0, 25) + '...' : fullMsg.text) : 'Anexo de imagem';
+
+    // Optimistic local update
+    this.messages.push(fullMsg);
     setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
     this.messagesListeners.forEach((fn) => fn(this.messages));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: 'Mensagem enviada no chat',
+      description: `${senderRole} para ${fullMsg.patientCode}: "${previewText}"`,
+      status: 'success',
+      type: 'chat',
+    });
+
+    // Cloud write
+    if (db) {
+      this.setSyncing(true);
       try {
-        const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'messages', id);
-        await setDoc(docRef, newMsg);
+        const docRef = doc(db, COLLECTIONS.MESSAGES, fullMsg.id);
+        const payload = sanitizeForFirestore({
+          ...fullMsg,
+          updatedAt: serverTimestamp(),
+        });
+        await setDoc(docRef, payload, { merge: true });
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore message save error:', e);
+        console.warn('Erro ao enviar mensagem no Firestore:', e);
+        this.addSyncLog({
+          action: 'Erro ao enviar mensagem',
+          description: `${senderRole} para ${fullMsg.patientCode}`,
+          status: 'error',
+          type: 'chat',
+        });
+        handleFirestoreError(e, OperationType.WRITE, `messages/${fullMsg.id}`);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Mark all messages from a patient as read
+  // 4. Marcar Mensagens de um Paciente como Lidas
   public async markMessagesAsRead(patientCode: string): Promise<void> {
-    let changed = false;
+    const code = patientCode.trim().toUpperCase();
+    let hasChanged = false;
+    const unreadMsgsToUpdate: string[] = [];
+
     this.messages = this.messages.map((m) => {
-      if (m.patientCode.toUpperCase() === patientCode.toUpperCase() && m.sender === 'patient' && !m.read) {
-        changed = true;
+      if (m.patientCode.toUpperCase() === code && !m.read && m.sender === 'patient') {
+        hasChanged = true;
+        unreadMsgsToUpdate.push(m.id);
         return { ...m, read: true };
       }
       return m;
     });
 
-    if (changed) {
+    if (hasChanged) {
       setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
       this.messagesListeners.forEach((fn) => fn(this.messages));
-      this.broadcastLocalUpdate();
 
-      if (firebaseDb) {
+      if (db && unreadMsgsToUpdate.length > 0) {
+        this.setSyncing(true);
         try {
-          const patientMsgs = this.messages.filter(
-            (m) => m.patientCode.toUpperCase() === patientCode.toUpperCase() && m.sender === 'patient'
-          );
-          for (const m of patientMsgs) {
-            const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'messages', m.id);
-            await setDoc(docRef, m, { merge: true });
+          for (const msgId of unreadMsgsToUpdate) {
+            const docRef = doc(db, COLLECTIONS.MESSAGES, msgId);
+            await setDoc(docRef, { read: true, updatedAt: serverTimestamp() }, { merge: true });
           }
+          this.setStatus('synced');
         } catch (e) {
-          console.warn('Firestore mark as read error:', e);
+          console.warn('Erro ao atualizar status de lido no Firestore:', e);
+        } finally {
+          this.setSyncing(false);
         }
       }
     }
   }
 
-  // Save or update appointment
-  public async saveAppointment(appointment: Omit<Appointment, 'id'> & { id?: string }): Promise<void> {
-    const id = appointment.id || 'appnt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-    const item: Appointment = {
+  // 5. Salvar / Atualizar Consulta na Agenda
+  public async saveAppointment(appointment: (Omit<Appointment, 'id'> & { id?: string }) | Appointment): Promise<void> {
+    const apptId = appointment.id || `appt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullAppt: Appointment = {
       ...appointment,
-      id,
-      timestamp: appointment.timestamp || new Date().toISOString(),
+      id: apptId,
     };
 
-    const existingIndex = this.agenda.findIndex((a) => a.id === id);
-    if (existingIndex >= 0) {
-      this.agenda[existingIndex] = item;
+    const isUpdate = this.agenda.some((a) => a.id === fullAppt.id);
+
+    // Optimistic local update
+    const index = this.agenda.findIndex((a) => a.id === fullAppt.id);
+    if (index >= 0) {
+      this.agenda[index] = fullAppt;
     } else {
-      this.agenda.push(item);
+      this.agenda.push(fullAppt);
     }
     setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
     this.agendaListeners.forEach((fn) => fn(this.agenda));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: isUpdate ? 'Agendamento atualizado' : 'Adicionado agendamento',
+      description: `${fullAppt.title} (${fullAppt.date}${fullAppt.time ? ` às ${fullAppt.time}` : ''})`,
+      status: 'success',
+      type: 'appointment',
+    });
+
+    // Cloud write
+    if (db) {
+      this.setSyncing(true);
       try {
-        const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'agenda', id);
-        await setDoc(docRef, item, { merge: true });
+        const docRef = doc(db, COLLECTIONS.AGENDA, fullAppt.id);
+        const payload = sanitizeForFirestore({
+          ...fullAppt,
+          updatedAt: serverTimestamp(),
+        });
+        await setDoc(docRef, payload, { merge: true });
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore agenda save error:', e);
+        console.warn('Erro ao salvar agendamento no Firestore:', e);
+        this.addSyncLog({
+          action: 'Erro ao salvar agendamento',
+          description: `${fullAppt.title}`,
+          status: 'error',
+          type: 'appointment',
+        });
+        handleFirestoreError(e, OperationType.WRITE, `agenda/${fullAppt.id}`);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Delete appointment
+  // 6. Excluir Consulta da Agenda
   public async deleteAppointment(id: string): Promise<void> {
+    const existing = this.agenda.find((a) => a.id === id);
+    const desc = existing ? `${existing.title} (${existing.date})` : `Consulta ID: ${id.substring(0, 8)}`;
+
+    // Optimistic local update
     this.agenda = this.agenda.filter((a) => a.id !== id);
     setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
     this.agendaListeners.forEach((fn) => fn(this.agenda));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: 'Agendamento cancelado',
+      description: desc,
+      status: 'success',
+      type: 'appointment',
+    });
+
+    // Cloud delete
+    if (db) {
+      this.setSyncing(true);
       try {
-        await deleteDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'agenda', id));
+        const docRef = doc(db, COLLECTIONS.AGENDA, id);
+        await deleteDoc(docRef);
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore agenda delete error:', e);
+        console.warn('Erro ao excluir agendamento no Firestore:', e);
+        handleFirestoreError(e, OperationType.DELETE, `agenda/${id}`);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Save or toggle recipe
+  // 7. Salvar Receita Culinária Inteligente
   public async saveRecipe(recipe: RecipeItem): Promise<void> {
     const recipeId = (recipe as any).id || recipe.nome.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const itemWithId = { ...recipe, id: recipeId };
+    const itemWithId: RecipeItem = {
+      ...recipe,
+      id: recipeId,
+    } as RecipeItem;
+
+    const isUpdate = this.recipes.some(
+      (r) => r.nome.trim().toLowerCase() === recipe.nome.trim().toLowerCase()
+    );
+
+    // Optimistic local update
     const existingIndex = this.recipes.findIndex(
       (r) => r.nome.trim().toLowerCase() === recipe.nome.trim().toLowerCase()
     );
@@ -606,58 +784,144 @@ export class DataStore {
     }
     setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
     this.recipesListeners.forEach((fn) => fn(this.recipes));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: isUpdate ? 'Receita atualizada' : 'Adicionada receita',
+      description: `${itemWithId.nome}`,
+      status: 'success',
+      type: 'recipe',
+    });
+
+    // Cloud write
+    if (db) {
+      this.setSyncing(true);
       try {
-        const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes', recipeId);
-        await setDoc(docRef, itemWithId, { merge: true });
+        const docRef = doc(db, COLLECTIONS.RECIPES, recipeId);
+        const payload = sanitizeForFirestore({
+          ...itemWithId,
+          updatedAt: serverTimestamp(),
+        });
+        await setDoc(docRef, payload, { merge: true });
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore recipe save error:', e);
+        console.warn('Erro ao salvar receita no Firestore:', e);
+        handleFirestoreError(e, OperationType.WRITE, `recipes/${recipeId}`);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Delete saved recipe
+  // 8. Excluir Receita Salva
   public async deleteRecipe(recipeName: string): Promise<void> {
     const recipeId = recipeName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+    // Optimistic local update
     this.recipes = this.recipes.filter(
       (r) => r.nome.trim().toLowerCase() !== recipeName.trim().toLowerCase()
     );
     setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
     this.recipesListeners.forEach((fn) => fn(this.recipes));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: 'Receita removida',
+      description: `${recipeName}`,
+      status: 'success',
+      type: 'recipe',
+    });
+
+    // Cloud delete
+    if (db) {
+      this.setSyncing(true);
       try {
-        await deleteDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes', recipeId));
+        const docRef = doc(db, COLLECTIONS.RECIPES, recipeId);
+        await deleteDoc(docRef);
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore recipe delete error:', e);
+        console.warn('Erro ao excluir receita no Firestore:', e);
+        handleFirestoreError(e, OperationType.DELETE, `recipes/${recipeId}`);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Save calculator session state
+  // 9. Salvar Sessão da Calculadora Nutricional
   public async saveCalculatorState(data: any): Promise<void> {
     this.calculatorState = data;
     setLocalData(STORAGE_KEYS.CALCULATOR, data);
     this.calculatorListeners.forEach((fn) => fn(this.calculatorState));
-    this.broadcastLocalUpdate();
 
-    if (firebaseDb) {
+    this.addSyncLog({
+      action: 'Sessão da calculadora salva',
+      description: 'Distribuição calórica e de macronutrientes',
+      status: 'success',
+      type: 'calculator',
+    });
+
+    // Cloud write
+    if (db) {
+      this.setSyncing(true);
       try {
-        const docRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'calculator', 'latest');
-        await setDoc(docRef, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+        const docRef = doc(db, COLLECTIONS.CALCULATOR, 'latest');
+        const payload = sanitizeForFirestore({
+          ...data,
+          updatedAt: serverTimestamp(),
+          clientUpdatedAt: new Date().toISOString(),
+        });
+        await setDoc(docRef, payload, { merge: true });
+        this.setStatus('synced');
       } catch (e) {
-        console.warn('Firestore calculator save error:', e);
+        console.warn('Erro ao salvar calculadora no Firestore:', e);
+      } finally {
+        this.setSyncing(false);
       }
     }
   }
 
-  // Export consolidated JSON backup with all system entities
+  // 10. Testar Conexão em Tempo Real com Firestore
+  public async testConnection(): Promise<{ success: boolean; latencyMs: number; message: string }> {
+    const startTime = Date.now();
+    this.setSyncing(true);
+    try {
+      if (!db) throw new Error('Serviço Firestore não inicializado');
+      await setDoc(
+        doc(db, 'system', 'ping'),
+        {
+          lastPing: serverTimestamp(),
+          clientTimestamp: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+      const latencyMs = Math.max(1, Date.now() - startTime);
+      this.setStatus('synced');
+      this.addSyncLog({
+        action: 'Conexão testada com sucesso',
+        description: `Resposta em ${latencyMs}ms com o servidor Firestore`,
+        status: 'success',
+        type: 'system',
+      });
+      return { success: true, latencyMs, message: `Conexão ativa (${latencyMs}ms)` };
+    } catch (e: any) {
+      this.setStatus('offline');
+      this.addSyncLog({
+        action: 'Falha no teste de conexão',
+        description: e?.message || 'Servidor indisponível',
+        status: 'error',
+        type: 'system',
+      });
+      return { success: false, latencyMs: 0, message: e?.message || 'Falha ao conectar à nuvem' };
+    } finally {
+      this.setSyncing(false);
+    }
+  }
+
+  // ==========================================
+  // BACKUP & RESTORE CONSOLIDADO
+  // ==========================================
   public exportConsolidatedBackup(): string {
     const data = {
-      version: '1.10',
+      version: '1.20',
       exportedAt: new Date().toISOString(),
       reports: this.reports,
       allMessages: this.messages,
@@ -669,8 +933,9 @@ export class DataStore {
     return JSON.stringify(data, null, 2);
   }
 
-  // Import complete backup with full schema validation
-  public async importConsolidatedBackup(jsonString: string): Promise<{ success: boolean; count: number; error?: string }> {
+  public async importConsolidatedBackup(
+    jsonString: string
+  ): Promise<{ success: boolean; count: number; error?: string }> {
     try {
       const data = JSON.parse(jsonString);
       const hasReports = Array.isArray(data.reports);
@@ -680,291 +945,87 @@ export class DataStore {
       const hasCalc = !!data.calculatorState;
 
       if (!data || (!hasReports && !hasMessages && !hasAgenda && !hasRecipes && !hasCalc)) {
-        return { success: false, count: 0, error: 'Formato de arquivo inválido. Backup incompleto ou danificado.' };
+        return {
+          success: false,
+          count: 0,
+          error: 'Formato de arquivo inválido. Backup incompleto ou danificado.',
+        };
       }
 
       let totalImported = 0;
 
       if (hasReports) {
-        this.reports = data.reports;
-        setLocalData(STORAGE_KEYS.REPORTS, this.reports);
-        totalImported += this.reports.length;
-        if (firebaseDb) {
-          for (const r of data.reports) {
-            await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'reports', r.id), r);
-          }
+        for (const r of data.reports) {
+          await this.saveReport(r);
         }
+        totalImported += data.reports.length;
       }
 
       const msgs = data.allMessages || data.chatMessages;
       if (Array.isArray(msgs)) {
-        this.messages = msgs;
-        setLocalData(STORAGE_KEYS.MESSAGES, this.messages);
-        totalImported += this.messages.length;
-        if (firebaseDb) {
-          for (const m of msgs) {
-            await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'messages', m.id), m);
-          }
+        for (const m of msgs) {
+          await this.sendMessage(m);
         }
+        totalImported += msgs.length;
       }
 
       const appts = data.appointments || data.agenda;
       if (Array.isArray(appts)) {
-        this.agenda = appts;
-        setLocalData(STORAGE_KEYS.AGENDA, this.agenda);
-        totalImported += this.agenda.length;
-        if (firebaseDb) {
-          for (const a of appts) {
-            await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'agenda', a.id), a);
-          }
+        for (const a of appts) {
+          await this.saveAppointment(a);
         }
+        totalImported += appts.length;
       }
 
       if (hasRecipes) {
-        this.recipes = data.recipes;
-        setLocalData(STORAGE_KEYS.RECIPES, this.recipes);
-        totalImported += this.recipes.length;
-        if (firebaseDb) {
-          for (const rec of data.recipes) {
-            const recipeId = rec.id || rec.nome.toLowerCase().replace(/[^a-z0-9]/g, '_');
-            await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'recipes', recipeId), { ...rec, id: recipeId });
-          }
+        for (const rec of data.recipes) {
+          await this.saveRecipe(rec);
         }
+        totalImported += data.recipes.length;
       }
 
       if (hasCalc) {
-        this.calculatorState = data.calculatorState;
-        setLocalData(STORAGE_KEYS.CALCULATOR, this.calculatorState);
+        await this.saveCalculatorState(data.calculatorState);
         totalImported += 1;
-        if (firebaseDb) {
-          await setDoc(doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'calculator', 'latest'), {
-            ...this.calculatorState,
-            updatedAt: new Date().toISOString(),
-          }, { merge: true });
-        }
       }
 
       if (Array.isArray(data.pinnedPatients)) {
-        setLocalData('nutriclinical_pinned_patients_v1', data.pinnedPatients);
+        setLocalData(STORAGE_KEYS.PINNED_PATIENTS, data.pinnedPatients);
       }
 
-      this.notifyAll();
       return { success: true, count: totalImported };
     } catch (e: any) {
-      return { success: false, count: 0, error: e.message || 'Erro ao processar o arquivo de backup.' };
+      return {
+        success: false,
+        count: 0,
+        error: e.message || 'Erro ao processar o arquivo de backup.',
+      };
     }
   }
 
-  // Inject Rich Mock Data for Immediate Testing
+  public async restoreBackup(data: any): Promise<void> {
+    if (data.reports && Array.isArray(data.reports)) {
+      for (const r of data.reports) {
+        await this.saveReport(r);
+      }
+    }
+    if (data.agenda && Array.isArray(data.agenda)) {
+      for (const a of data.agenda) {
+        await this.saveAppointment(a);
+      }
+    }
+  }
+
+  // ==========================================
+  // SEED INITIAL DATA (Disabled - Real data only)
+  // ==========================================
+  public async seedInitialData(): Promise<void> {
+    // Only data added by the nutritionist is stored.
+    return Promise.resolve();
+  }
+
   public async injectMockData(): Promise<void> {
-    const today = new Date().toISOString().split('T')[0];
-    const prevDate1 = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-    const prevDate2 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const currDate = new Date().toISOString();
-
-    const mockReports: ReportRecord[] = [
-      {
-        id: 'mock_ana_silva_1',
-        date: prevDate1,
-        patientCode: 'ANA1',
-        formData: {
-          nome: 'Ana Silva',
-          idade: '32',
-          telefone: '(11) 98765-4321',
-          email: 'ana.silva@email.com',
-          peso: '86.5',
-          altura: '165',
-          braco: '34',
-          peito: '102',
-          cintura: '88',
-          abdomen: '96',
-          quadril: '112',
-          coxa: '64',
-          panturrilha: '39',
-          objetivo: 'Emagrecimento',
-          restricoes: 'Intolerância moderada à lactose',
-          sintomas: 'Queda de cabelo intensa, cansaço extremo pela manhã e unhas quebradiças.',
-          agua: '1.5',
-          exercicio: 'Sedentário (Nenhum ou muito pouco)',
-          observacoes: 'Dificuldade para jantar cedo.',
-          instrucoesIA: 'Focar em fontes vegetais de cálcio e densidade de nutrientes.',
-          patientCode: 'ANA1',
-          senha: 'ana123',
-          tipoDieta: 'Projeto Verão',
-          calorias: '1500',
-        },
-        aiMealPlan: `🎯 Dieta baseada em: Projeto Verão | Meta Calórica: 1500 kcal
-
-🌅 Café da Manhã:
-• 2 ovos mexidos com azeite de oliva e orégano
-• 1 fatia de pão 100% integral ou 2 torradas integrais
-• 1 xícara de café preto ou chá verde sem açúcar
-
-🍽️ Almoço:
-• 140g de filé de peito de frango grelhado em cubos
-• 100g de batata doce cozida ou arroz integral
-• Salada à vontade: folhas verdes escuras, pepino, tomate cereja e cenoura ralada
-• 1 colher de sobremesa de azeite extravirgem
-
-🍎 Lanche da Tarde:
-• 1 porção de fruta fresca (maçã com canela ou 150g de morangos)
-• 20g de mix de castanhas (do Pará e de caju)
-
-🌙 Jantar:
-• 1 prato fundo de sopa de legumes com carne magra desfiada (sem batata inglesa)
-• Omelete de 2 claras e 1 gema com espinafre e tomate picado`,
-        aiData: {
-          mealPlan: `🎯 Dieta baseada em: Projeto Verão | Meta Calórica: 1500 kcal
-
-🌅 Café da Manhã:
-• 2 ovos mexidos com azeite de oliva e orégano
-• 1 fatia de pão 100% integral ou 2 torradas integrais
-• 1 xícara de café preto ou chá verde sem açúcar
-
-🍽️ Almoço:
-• 140g de filé de peito de frango grelhado em cubos
-• 100g de batata doce cozida ou arroz integral
-• Salada à vontade: folhas verdes escuras, pepino, tomate cereja e cenoura ralada
-• 1 colher de sobremesa de azeite extravirgem
-
-🍎 Lanche da Tarde:
-• 1 porção de fruta fresca (maçã com canela ou 150g de morangos)
-• 20g de mix de castanhas (do Pará e de caju)
-
-🌙 Jantar:
-• 1 prato fundo de sopa de legumes com carne magra desfiada (sem batata inglesa)
-• Omelete de 2 claras e 1 gema com espinafre e tomate picado`,
-          training: 'Caminhada moderada de 30 a 40 minutos 3x na semana + musculação leve adaptativa.',
-          supplements: '• Ómega 3 (1000mg no almoço)\n• Vitamina D3 (2000 UI com refeição gordurosa)\n• Complexo B com Biotina',
-          deficiencias: 'A queixa de queda de cabelo intensa associada a fadiga matinal sugere possível carência de Ferro (Ferritina sérica baixa), Vitamina D e Zinco. Recomenda-se solicitação de hemograma completo, ferritina, zinco e 25-OH VitD no próximo retorno.',
-        },
-      },
-      {
-        id: 'mock_ana_silva_2',
-        date: currDate,
-        patientCode: 'ANA1',
-        formData: {
-          nome: 'Ana Silva',
-          idade: '32',
-          telefone: '(11) 98765-4321',
-          email: 'ana.silva@email.com',
-          peso: '77.8',
-          altura: '165',
-          braco: '30.5',
-          peito: '96',
-          cintura: '79',
-          abdomen: '84',
-          quadril: '104',
-          coxa: '58.5',
-          panturrilha: '37',
-          objetivo: 'Emagrecimento',
-          restricoes: 'Intolerância moderada à lactose',
-          sintomas: 'Queda de cabelo estabilizou; boa disposição para treinar.',
-          agua: '2.5',
-          exercicio: 'Moderado (3 a 4 vezes por semana)',
-          observacoes: 'Excelente aderência!',
-          instrucoesIA: 'Aumentar aporte proteico pós-treino.',
-          patientCode: 'ANA1',
-          senha: 'ana123',
-          tipoDieta: 'Restrição de Carboidratos (Low Carb)',
-          calorias: '1400',
-        },
-        aiMealPlan: `🎯 Dieta baseada em: Restrição de Carboidratos (Low Carb) | Meta Calórica: 1400 kcal
-
-🌅 Café da Manhã:
-• 2 ovos pochê com avocado fatiado (50g)
-• 1 xícara de café expresso com canela
-
-🍽️ Almoço:
-• 160g de salmão grelhado ou sobrecoxa desossada
-• Mix generoso de brócolis ao vapor, couve-flor e abobrinha grelhada
-• Salada de rúcula com azeite extravirgem e sementes de abóbora
-
-🍎 Lanche da Tarde:
-• 1 dose de proteína vegetal ou isolada sem lactose batida com leite vegetal
-• 1 punhado pequeno de morangos ou mirtilos
-
-🌙 Jantar:
-• 150g de carne moída de patinho com abobrinha em cubos
-• Salada de folhas verdes com palmito pupunha`,
-        aiData: {
-          mealPlan: `🎯 Dieta baseada em: Restrição de Carboidratos (Low Carb) | Meta Calórica: 1400 kcal
-
-🌅 Café da Manhã:
-• 2 ovos pochê com avocado fatiado (50g)
-• 1 xícara de café expresso com canela
-
-🍽️ Almoço:
-• 160g de salmão grelhado ou sobrecoxa desossada
-• Mix generoso de brócolis ao vapor, couve-flor e abobrinha grelhada
-• Salada de rúcula com azeite extravirgem e sementes de abóbora
-
-🍎 Lanche da Tarde:
-• 1 dose de proteína vegetal ou isolada sem lactose batida com leite vegetal
-• 1 punhado pequeno de morangos ou mirtilos
-
-🌙 Jantar:
-• 150g de carne moída de patinho com abobrinha em cubos
-• Salada de folhas verdes com palmito pupunha`,
-          training: 'Treino de força (musculação) 4x na semana com foco em membros inferiores + 20min de cardio.',
-          supplements: '• Creatina Monoidratada (3g diárias)\n• Magnésio Dimalato (300mg à noite)\n• Whey Protein Isolado sem lactose',
-          deficiencias: 'Evolução clínica notável. Queda capilar controlada. Manter acompanhamento de hemograma semestral.',
-        },
-      },
-    ];
-
-    const mockMessages: ChatMessage[] = [
-      {
-        id: 'msg_init_1',
-        patientCode: 'ANA1',
-        sender: 'nutri',
-        text: 'Olá Ana! Bem-vinda ao seu acompanhamento no NutriClinical. Qualquer dúvida com as receitas ou substituições, pode me enviar aqui!',
-        timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        read: true,
-      },
-      {
-        id: 'msg_init_2',
-        patientCode: 'ANA1',
-        sender: 'patient',
-        text: 'Oi Dra. Maria Eduarda! Estou amando a panqueca de aveia da Cozinha Inteligente. Consegui treinar 4x essa semana!',
-        timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-        read: true,
-      },
-    ];
-
-    const mockAppointments: Appointment[] = [
-      {
-        id: 'appnt_1',
-        title: 'Consulta Qualisan - Ana Silva',
-        date: today,
-        time: '14:30',
-        notes: 'Avaliação de bioimpedância e reajuste calórico.',
-        type: 'Consulta Qualisan',
-        timestamp: new Date().toISOString(),
-      },
-      {
-        id: 'appnt_2',
-        title: 'Visita Particular - Dr. Ricardo',
-        date: today,
-        time: '17:00',
-        notes: 'Alinhamento de dieta para prova de corrida 10km.',
-        type: 'Visita Particular',
-        timestamp: new Date().toISOString(),
-      },
-      {
-        id: 'appnt_3',
-        title: 'Revisão de Casos Clínicos',
-        date: today,
-        time: '19:00',
-        notes: 'Estudo de artigos sobre modulação intestinal.',
-        type: 'Lazer / Pessoal',
-        timestamp: new Date().toISOString(),
-      },
-    ];
-
-    for (const r of mockReports) await this.saveReport(r);
-    for (const m of mockMessages) await this.sendMessage(m);
-    for (const a of mockAppointments) await this.saveAppointment(a);
+    return Promise.resolve();
   }
 }
 

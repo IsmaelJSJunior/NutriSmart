@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { UserRole, AppView } from '../types';
 import { SettingsModal } from './SettingsModal';
+import { CloudSyncIndicator } from './CloudSyncIndicator';
 
 interface NavbarProps {
   role?: UserRole;
@@ -67,6 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <CloudSyncIndicator className="inline-flex" />
             {onOpenPatientLogin && (
               <button
                 onClick={onOpenPatientLogin}
@@ -220,6 +222,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               </div>
             )}
+
+            {/* Indicador de Sincronização em Tempo Real (Firestore) */}
+            <CloudSyncIndicator className="mr-1" />
 
             {/* Logout / Sair (positioned to the LEFT of Settings) */}
             <button
